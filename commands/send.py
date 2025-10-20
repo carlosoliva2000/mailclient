@@ -1,6 +1,7 @@
 import argparse
 import os
 import mimetypes
+import smtplib
 
 # from contextlib import redirect_stdout
 from typing import List, Optional, Dict, Any
@@ -82,12 +83,10 @@ def send_email_cli(args: argparse.Namespace):
 
     smtp_config = get_smtp_config(include_imap=args.save_sent)
 
-    logger.info(f"Args: {args}")
-    logger.info(f"SMTP Configuration: {smtp_config}")
-    # import sys
-    # sys.exit(0)
+    logger.debug(f"SMTP Configuration: {smtp_config}")
 
-    send_email(
+    # Build message
+    msg = build_email_message(
         sender=args.sender,
         destination=args.destination,
         subject=args.subject,
@@ -95,15 +94,180 @@ def send_email_cli(args: argparse.Namespace):
         body_file=args.body_file,
         body_images=args.body_image,
         attachments=args.attach,
-        add_link=args.add_link,
         cc=args.cc,
-        bcc=args.bcc,
         template_name=args.template,
-        template_params=args.template_params,
-        smtp_config=smtp_config,
-        save_sent=args.save_sent,
-        debug=args.debug,
+        template_params=args.template_params
     )
+
+    # Prepare recipients list
+    all_recipients = args.destination[:]
+    if args.cc:
+        all_recipients.extend(args.cc)
+    if args.bcc:
+        all_recipients.extend(args.bcc)
+    
+    # Send email
+    send_prepared_email(
+        msg=msg,
+        smtp_config=smtp_config,
+        sender=args.sender,
+        all_recipients=all_recipients,
+        save_sent=args.save_sent
+    )
+
+    # send_email(
+    #     sender=args.sender,
+    #     destination=args.destination,
+    #     subject=args.subject,
+    #     body=args.body,
+    #     body_file=args.body_file,
+    #     body_images=args.body_image,
+    #     attachments=args.attach,
+    #     cc=args.cc,
+    #     bcc=args.bcc,
+    #     template_name=args.template,
+    #     template_params=args.template_params,
+    #     smtp_config=smtp_config,
+    #     save_sent=args.save_sent
+    # )
+
+
+def build_email_message(
+    sender: str,
+    destination: List[str],
+    subject: Optional[str],
+    body: Optional[str] = None,
+    body_file: Optional[str] = None,
+    body_images: Optional[List[str]] = None,
+    attachments: Optional[List[str]] = None,
+    cc: Optional[List[str]] = None,
+    template_name: Optional[str] = None,
+    template_params: Optional[Dict[str, Any]] = None,
+    extra_headers: Optional[Dict[str, str]] = None,
+) -> MIMEMultipart:
+    """
+    Build an email message (MIME) with optional templates, attachments, inline images, etc.
+    Returns a ready-to-send MIMEMultipart object.
+    """
+    msg = MIMEMultipart()
+    msg["From"] = sender
+    msg["To"] = ", ".join(destination)
+    if cc:
+        msg["Cc"] = ", ".join(cc)
+
+    # Subject, body and template handling
+    if template_name:
+        try:
+            template = get_template(template_name, **(template_params or {}))
+            subject = subject or template.get("subject", "")
+            body = body or template.get("body", "")
+        except ValueError as e:
+            logger.error(f"Error using template: {e}")
+            raise ValueError(f"Error using template: {e}")
+        
+    msg["Subject"] = subject or "No Subject"
+    msg["Date"] = formatdate(localtime=True)
+    msg["Message-ID"] = make_msgid(domain=sender.split("@")[-1])
+
+    # Body handling
+    if body is None and body_file is None:
+        mail_body = ""
+        logger.warning("Email body is empty.")
+    elif body_file:
+        try:
+            with open(os.path.expanduser(body_file), "r", encoding="utf-8") as f:
+                mail_body = f.read()
+        except IOError as e:
+            logger.error(f"Error reading body file: {e}")
+            raise IOError(f"Error reading body file: {e}")
+    elif body:
+        mail_body = body
+    else:
+        mail_body = ""
+
+    msg.attach(MIMEText(mail_body, "html"))
+
+    # Inline images
+    if body_images:
+        for path in body_images:
+            path = os.path.abspath(os.path.expanduser(path))
+            try:
+                with open(path, "rb") as f:
+                    img = MIMEImage(f.read())
+                    img.add_header("Content-ID", f"<{os.path.basename(path)}>")
+                    img.add_header("Content-Disposition", "inline", filename=os.path.basename(path))
+                    msg.attach(img)
+            except FileNotFoundError as e:
+                logger.error(f"Body image not found: {path}")
+                raise FileNotFoundError(f"Body image not found: {path}")
+            except Exception as e:
+                logger.error(f"Error attaching image {path}: {e}")
+                raise Exception(f"Error attaching image {path}: {e}")
+    
+    # Attachments
+    if attachments:
+        for path in attachments:
+            path = os.path.abspath(os.path.expanduser(path))
+            try:
+                ctype, encoding = mimetypes.guess_type(path)
+                maintype, subtype = (ctype or "application/octet-stream").split("/", 1)
+                with open(path, "rb") as f:
+                    part = MIMEBase(maintype, subtype)
+                    part.set_payload(f.read())
+                
+                # Encode the payload using Base64
+                encoders.encode_base64(part)
+                part.add_header("Content-Disposition", "attachment", filename=os.path.basename(path))
+                msg.attach(part)
+            except FileNotFoundError as e:
+                logger.error(f"Attachment file not found: {path}")
+                raise FileNotFoundError(f"Attachment file not found: {path}")
+            except Exception as e:
+                logger.error(f"Error attaching file {path}: {e}")
+                raise Exception(f"Error attaching file {path}: {e}")
+
+    # Extra headers (for reply/forward)
+    if extra_headers:
+        for key, value in extra_headers.items():
+            msg[key] = value
+
+    return msg
+
+
+def send_prepared_email(
+    msg: MIMEMultipart,
+    smtp_config: Dict[str, Any],
+    sender: str,
+    all_recipients: List[str],
+    save_sent: bool = False
+) -> bool:
+    """Send a pre-built email and optionally save it to the 'Sent' folder."""
+    try:
+        with connect_smtp(smtp_config) as server:
+            server.send_message(msg, from_addr=sender, to_addrs=all_recipients)
+        logger.info("Email sent successfully!")
+
+        if save_sent:
+            imap_config = smtp_config["imap_config"]
+            imap_client, _ = connect_mail(imap_config)
+            save_to_sent_folder(
+                imap_client=imap_client,
+                sent_folder=imap_config.get("folder", "Sent"),
+                msg_bytes=msg.as_bytes()
+            )
+        return True
+    except smtplib.SMTPAuthenticationError as e:
+        logger.error(f"SMTP authentication error: {e}")
+        return False
+    except smtplib.SMTPConnectError as e:
+        logger.error(f"SMTP connection error: {e}")
+        return False
+    except smtplib.SMTPException as e:
+        logger.error(f"SMTP error occurred: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"Unexpected error trying to send email: {e}")
+        return False
 
 
 def send_email(
@@ -115,13 +279,11 @@ def send_email(
     body_file: Optional[str] = None,
     body_images: Optional[List[str]] = None,
     attachments: Optional[List[str]] = None,
-    add_link: Optional[str] = None,
     cc: Optional[List[str]] = None,
     bcc: Optional[List[str]] = None,
     template_name: Optional[str] = None,
     template_params: Optional[Dict[str, str]] = None,
-    save_sent: bool = False,
-    debug: bool = False,
+    save_sent: bool = False
 ) -> bool:
     """
     Send an email with:
@@ -144,7 +306,6 @@ def send_email(
         attach_path (Optional[List[str]]): List of paths to attachment files.
         cc (Optional[List[str]]): List of CC recipient email addresses.
         bcc (Optional[List[str]]): List of BCC recipient email addresses.
-        add_link (Optional[str]): URL to be added to the end of the email body.
         template_name (Optional[str]): Name of the email template to use.
         template_params (Optional[Dict[str, str]]): Parameters for the email template.
         debug (bool): Enable debug mode.
@@ -193,8 +354,8 @@ def send_email(
     else:
         email_body = ""
 
-    if add_link:
-        email_body += f"\n\nPlease check this link: {add_link}"
+    # if add_link:
+    #     email_body += f"\n\nPlease check this link: {add_link}"
 
     # Set email headers and body
     msg["Subject"] = subject or "No Subject"
@@ -250,7 +411,6 @@ def send_email(
         if save_sent:
             imap_config = smtp_config["imap_config"]
             imap_client, _ = connect_mail(imap_config)
-
             save_to_sent_folder(
                 imap_client=imap_client,
                 sent_folder=imap_config.get("folder", "Sent"),
