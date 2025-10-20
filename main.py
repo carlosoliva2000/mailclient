@@ -16,8 +16,8 @@ def main():
     send.register_arguments(send_parser)
 
     # --- READ ---
-    # read_parser = subparsers.add_parser("read", help="Read emails.")
-    # read.register_arguments(read_parser)
+    read_parser = subparsers.add_parser("read", help="Read emails.")
+    read.register_arguments(read_parser)
 
     # --- REPLY ---
     # reply_parser = subparsers.add_parser("reply", help="Reply to emails.")
@@ -32,16 +32,16 @@ def main():
     # Logging setup
     setup_global_logger(debug=getattr(args, "debug", False))
     logger = get_logger()
-    
+
     logger.info("Starting mailclient.")
-    if args.debug:
-        logger.info("Debug mode is enabled.")
+    if unknown:
+        logger.warning(f"Unknown arguments ignored: {unknown}")
+    logger.debug(f"Arguments: {args}")
 
     if args.command == "send":
-        send.send_email(args)
+        send.send_email_cli(args)
     elif args.command == "read":
-        # read.main(args)
-        pass
+        read.read_email_cli(args)
     # elif args.command == "reply":
     #     reply.main(args)
     # elif args.command == "forward":

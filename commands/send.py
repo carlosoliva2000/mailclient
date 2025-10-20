@@ -22,7 +22,7 @@ logger = get_logger()
 
 
 def register_arguments(parser: argparse.ArgumentParser):
-    """Register command-line arguments for sending email."""
+    """Register command-line arguments for the send command."""
     parser.add_argument("--smtp-host", "-H", required=True, help="SMTP host.")
     parser.add_argument("--smtp-port", "-P", type=int, required=True, help="SMTP port.")
     parser.add_argument("--smtp-username", "-u", default=None, help="SMTP username. Not required if no authentication is needed.")
@@ -61,8 +61,7 @@ def register_arguments(parser: argparse.ArgumentParser):
     parser.add_argument("--debug", action="store_true", help="Enable debug mode.", required=False)
 
 
-
-def send_email(args: argparse.Namespace):
+def send_email_cli(args: argparse.Namespace):
     """Send an email using SMTP through CLI arguments."""
     
     # Set env vars from CLI args
@@ -73,7 +72,7 @@ def send_email(args: argparse.Namespace):
 
     smtp_config = get_smtp_config()
 
-    _send_email(
+    send_email(
         sender=args.sender,
         destination=args.destination,
         subject=args.subject,
@@ -91,7 +90,7 @@ def send_email(args: argparse.Namespace):
     )
 
 
-def _send_email(
+def send_email(
     sender: str,
     destination: List[str],
     subject: Optional[str],

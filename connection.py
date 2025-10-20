@@ -38,7 +38,7 @@ def connect_smtp(config: Dict[str, Any]) -> smtplib.SMTP:
     return server
 
 
-def connect_mail(config: Dict[str, Any]) -> Tuple[ Union[imaplib.IMAP4, imaplib.IMAP4_SSL, poplib.POP3, poplib.POP3_SSL], str]:
+def connect_mail(config: Dict[str, Any]) -> Tuple[Union[imaplib.IMAP4, imaplib.IMAP4_SSL, poplib.POP3, poplib.POP3_SSL], str]:
     """Return a connected IMAP/POP3 client."""
     socket.setdefaulttimeout(config["timeout"])
     context = create_ssl_context(config["allow_insecure_tls"])
@@ -66,6 +66,10 @@ def connect_mail(config: Dict[str, Any]) -> Tuple[ Union[imaplib.IMAP4, imaplib.
         mail.pass_(config["password"])
         logger.info(f"Connected to POP3 {config['host']}:{config['port']}")
         return mail, "pop3"
+    
+    elif config["protocol"] == "mailpit":
+        # Dummy connection for Mailpit or similar local testing servers
+        raise NotImplementedError("Mailpit protocol handling is not implemented.")
 
     else:
         raise ValueError(f"Unsupported protocol: {config['protocol']}")
