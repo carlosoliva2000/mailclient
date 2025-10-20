@@ -15,7 +15,8 @@ from email.mime.image import MIMEImage
 from email_templates import get_template
 from log import get_logger
 from config import get_smtp_config, set_env_vars_from_args
-from connection import connect_smtp
+from connection import connect_smtp, connect_mail
+from mail_utils import save_to_sent_folder
 
 
 logger = get_logger()
@@ -30,6 +31,12 @@ def register_arguments(parser: argparse.ArgumentParser):
     parser.add_argument("--smtp-security", "-S", choices=["none", "starttls", "ssl"], default="none", help="Type of SMTP connection: none, starttls, ssl (default: none).")
     parser.add_argument("--allow-insecure-tls", "-I", action="store_true", default=False, help="Allow unverified/self-signed TLS certificates.")
     parser.add_argument("--timeout", "-t", type=int, default=30, help="SMTP connection timeout in seconds (default: 30).")
+    parser.add_argument("--save-sent", action="store_true", default=False, help="Save a copy of the sent email to the 'Sent' folder (requires IMAP).")
+    parser.add_argument("--mail-host", help="IMAP host for saving sent emails (default: same as SMTP host).")
+    parser.add_argument("--mail-port", type=int, default=993, help="IMAP port (default: 993).")
+    parser.add_argument("--mail-username", help="IMAP username (default: same as SMTP username).")
+    parser.add_argument("--mail-password", help="IMAP password (default: same as SMTP password).")
+    parser.add_argument("--mail-folder", default="Sent", help="IMAP folder name to save sent email (default: Sent).")
     parser.add_argument("sender", help="Sender email address.")
     parser.add_argument("destination", nargs="+", help="Recipient email address/addresses.")
     parser.add_argument("--subject", help="Email subject. If used with --template, overrides template subject.")
@@ -67,10 +74,18 @@ def send_email_cli(args: argparse.Namespace):
     # Set env vars from CLI args
     set_env_vars_from_args(args, [
         "SMTP_HOST", "SMTP_PORT", "SMTP_USERNAME", "SMTP_PASSWORD",
-        "SMTP_SECURITY", "ALLOW_INSECURE_TLS", "TIMEOUT"
+        "SMTP_SECURITY", "ALLOW_INSECURE_TLS", "TIMEOUT",
+        # IMAP settings for saving sent emails
+        "MAIL_HOST", "MAIL_PORT", "MAIL_USERNAME", "MAIL_PASSWORD", 
+        "MAIL_SECURITY", "MAIL_FOLDER"
     ])
 
-    smtp_config = get_smtp_config()
+    smtp_config = get_smtp_config(include_imap=args.save_sent)
+
+    logger.info(f"Args: {args}")
+    logger.info(f"SMTP Configuration: {smtp_config}")
+    # import sys
+    # sys.exit(0)
 
     send_email(
         sender=args.sender,
@@ -86,6 +101,7 @@ def send_email_cli(args: argparse.Namespace):
         template_name=args.template,
         template_params=args.template_params,
         smtp_config=smtp_config,
+        save_sent=args.save_sent,
         debug=args.debug,
     )
 
@@ -104,6 +120,7 @@ def send_email(
     bcc: Optional[List[str]] = None,
     template_name: Optional[str] = None,
     template_params: Optional[Dict[str, str]] = None,
+    save_sent: bool = False,
     debug: bool = False,
 ) -> bool:
     """
@@ -229,6 +246,16 @@ def send_email(
         with connect_smtp(smtp_config) as server:
             server.send_message(msg, from_addr=sender, to_addrs=all_recipients)
         logger.info("Email sent successfully!")
+
+        if save_sent:
+            imap_config = smtp_config["imap_config"]
+            imap_client, _ = connect_mail(imap_config)
+
+            save_to_sent_folder(
+                imap_client=imap_client,
+                sent_folder=imap_config.get("folder", "Sent"),
+                msg_bytes=msg.as_bytes()
+            )
         return True
     except Exception as e:
         logger.error(f"Failed to send email: {e}")

@@ -102,30 +102,6 @@ def fetch_emails(
             return []
 
 
-def list_mailboxes(client: Union[imaplib.IMAP4, imaplib.IMAP4_SSL]) -> List[Dict[str, str]]:
-    """Parse IMAP LIST response to a structured format."""
-    status, folders = client.list()
-    if status != 'OK':
-        logger.error("Failed to list mailboxes")
-        return []
-    
-    parsed = []
-    for f in folders:
-        line = f.decode()
-
-        # Get flags, delimiter, and name
-        parts = line.split(' ')
-        flags = parts[0].strip('()')
-        delimiter = parts[-2].strip('"')
-        name = parts[-1].strip('"')
-        parsed.append({
-            "flags": flags.split('\\')[1:],  # Split flags and remove leading backslash
-            "delimiter": delimiter,
-            "name": name
-        })
-    return parsed
-
-
 def download_attachment(email_message: Any, download_dir: str):
     """Download attachments from the email message to the specified directory."""
     if isinstance(email_message, dict):  # MailPit email
