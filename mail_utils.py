@@ -1,12 +1,16 @@
 import imaplib
+import re
 import time
 
-from email.header import decode_header
-from typing import Dict, List, Union
+from datetime import datetime
+from typing import Dict, List, Optional, Union, Tuple
 from email import message_from_bytes
+from email.message import Message
 from email.utils import parsedate_tz, mktime_tz
+from email.header import decode_header
 
 from log import get_logger
+
 
 logger = get_logger()
 
@@ -90,7 +94,78 @@ def save_to_sent_folder(
         return False
 
 
+def parse_datetime_flexible(s: str) -> Optional[float]:
+    """
+    Parse a user-provided date/time string into a timestamp (seconds since epoch).
+    Accepts:
+      - YYYY-MM-DD
+      - YYYY-MM-DDTHH:MM
+      - YYYY-MM-DDTHH:MM:SS
+      - YYYY-MM-DD HH:MM[:SS]
+      - Full ISO variations (if Python can parse)
+    Returns None if parsing fails.
+    """
+    if not s:
+        return None
+    s = s.strip()
+    # Try fromisoformat (Python 3.7+)
+    try:
+        # Handle date-only -> set midnight
+        if "T" in s or "-" in s and (":" in s):
+            dt = datetime.fromisoformat(s)
+        elif re.fullmatch(r"\d{4}-\d{2}-\d{2}", s):
+            dt = datetime.fromisoformat(s)
+        else:
+            # Try common formats
+            for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M"):
+                dt = datetime.strptime(s, fmt)
+                break
+            else:
+                dt = None
+        if dt:
+            return dt.timestamp()
+    except Exception:
+        pass
+
+    # Fallback: try several strptime attempts
+    for fmt in ("%Y-%m-%d", "%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S"):
+        try:
+            dt = datetime.strptime(s, fmt)
+            return dt.timestamp()
+        except Exception:
+            continue
+    return None
+
+
+def extract_body_from_msg(msg: Message) -> List[Tuple[str, str]]:
+    """
+    Return all text/plain and text/html payloads from an email as a list of tuples:
+    [(content_type, decoded_text), ...]
+    Always decodes and ignores attachments.
+    """
+    bodies: List[Tuple[str, str]] = []
+
+    if msg.is_multipart():
+        for part in msg.walk():
+            ctype = part.get_content_type()
+            dispo = part.get_content_disposition()
+            if ctype in ("text/plain", "text/html") and dispo != "attachment":
+                try:
+                    text = part.get_payload(decode=True).decode(part.get_content_charset() or "utf-8", errors="ignore")
+                    bodies.append((ctype, text))
+                except Exception:
+                    continue
+    else:
+        ctype = msg.get_content_type()
+        try:
+            text = msg.get_payload(decode=True).decode(msg.get_content_charset() or "utf-8", errors="ignore")
+            bodies.append((ctype, text))
+        except Exception:
+            pass
+
+    return bodies
+
+
 # TODO: Implement the following utility functions as needed
 # create_message(from, to, subject, body, attachments, headers)
-# extract_body(msg)
 # get_references_headers(original_msg)
