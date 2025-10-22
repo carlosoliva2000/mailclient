@@ -5,13 +5,13 @@ import smtplib
 
 # from contextlib import redirect_stdout
 from typing import List, Optional, Dict, Any
-from email import encoders
+from email import encoders, message_from_binary_file
 from email.utils import formatdate, make_msgid
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email.mime.image import MIMEImage
-
+from email.mime.message import MIMEMessage
 
 from email_templates import get_template
 from log import get_logger
@@ -45,7 +45,6 @@ def register_arguments(parser: argparse.ArgumentParser):
     parser.add_argument("--body-file", help="File containing email body text. If provided, overrides 'body'.")
     parser.add_argument("--body-image", action="append", help="Paths to inline image files. You can specify this argument as many images as needed.")
     parser.add_argument("--attach", action="append", help="Paths to attachment files. You can specify this argument as many attachments as needed.")
-    parser.add_argument("--add-link", help="URL to add at the end of the email body.")
     parser.add_argument("--cc", action="append", help="CC recipient email addresses. You can specify this argument as many addresses as needed.")
     parser.add_argument("--bcc", action="append", help="BCC recipient email addresses. You can specify this argument as many addresses as needed.")
     parser.add_argument("--template", help="Email template name to use.",
@@ -210,14 +209,23 @@ def build_email_message(
             path = os.path.abspath(os.path.expanduser(path))
             try:
                 ctype, encoding = mimetypes.guess_type(path)
+                logger.info(f"Attaching file {path} with guessed type {ctype} and encoding {encoding}")
                 maintype, subtype = (ctype or "application/octet-stream").split("/", 1)
-                with open(path, "rb") as f:
-                    part = MIMEBase(maintype, subtype)
-                    part.set_payload(f.read())
+                logger.info(f"Attachment maintype: {maintype}, subtype: {subtype}")
+                if maintype == "message" and subtype == "rfc822":
+                    # Special handling for .eml files
+                    with open(path, "rb") as f:
+                        eml_msg = message_from_binary_file(f)
+                    part = MIMEMessage(eml_msg)
+                    part.add_header("Content-Disposition", "attachment", filename=os.path.basename(path))
+                else:
+                    with open(path, "rb") as f:
+                        part = MIMEBase(maintype, subtype)
+                        part.set_payload(f.read())
                 
-                # Encode the payload using Base64
-                encoders.encode_base64(part)
-                part.add_header("Content-Disposition", "attachment", filename=os.path.basename(path))
+                    # Encode the payload using Base64
+                    encoders.encode_base64(part)
+                    part.add_header("Content-Disposition", "attachment", filename=os.path.basename(path))
                 msg.attach(part)
             except FileNotFoundError as e:
                 logger.error(f"Attachment file not found: {path}")

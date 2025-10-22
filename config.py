@@ -58,11 +58,11 @@ def get_mail_config() -> Dict[str, Any]:
     """Get mail (IMAP/POP3) configuration from environment variables."""
     return {
         "protocol": os.environ.get("MAIL_PROTOCOL", "imap").lower(),
-        "host": os.environ.get("MAIL_HOST"),
+        "host": os.environ.get("MAIL_HOST", os.environ.get("SMTP_HOST")),
         "port": int(os.environ.get("MAIL_PORT", 993)),
-        "username": os.environ.get("MAIL_USERNAME"),
-        "password": os.environ.get("MAIL_PASSWORD"),
-        "security": os.environ.get("MAIL_SECURITY", "none").lower(),
+        "username": os.environ.get("MAIL_USERNAME", os.environ.get("SMTP_USERNAME")),
+        "password": os.environ.get("MAIL_PASSWORD", os.environ.get("SMTP_PASSWORD")),
+        "security": os.environ.get("MAIL_SECURITY", os.environ.get("SMTP_SECURITY", "none")).lower(),
         "allow_insecure_tls": os.environ.get("ALLOW_INSECURE_TLS", "false").lower() == "true",
         "timeout": int(os.environ.get("TIMEOUT", 30)),
     }

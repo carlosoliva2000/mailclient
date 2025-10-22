@@ -211,6 +211,7 @@ def select_messages_pop3(
 
             subject = decode_mime_words(msg.get("Subject", ""))
             sender = email.utils.parseaddr(msg.get("From", ""))[1]
+            to = email.utils.parseaddr(msg.get("To", ""))[1]
             date_str = msg.get("Date")
 
             # Date filtering
@@ -240,8 +241,10 @@ def select_messages_pop3(
             results.append({
                 "id": uid,
                 "raw_msg": msg,
+                "date": date_str,
                 "subject": subject,
                 "from": sender,
+                "to": to,
                 "body": body
             })
 
@@ -358,6 +361,8 @@ def select_messages_imap(
         msg = message_from_bytes(raw)
         subject = decode_mime_words(msg.get("Subject", ""))
         sender = email.utils.parseaddr(msg.get("From", ""))[1]
+        to = email.utils.parseaddr(msg.get("To", ""))[1]
+        date = msg.get("Date", "")
         body = extract_body_from_msg(msg)
 
         if not filter_by_regex(subject, body, sender, subject_re, body_re, from_re, regex_mode):
@@ -367,8 +372,10 @@ def select_messages_imap(
         results.append({
             "id": mid.decode() if isinstance(mid, bytes) else str(mid), 
             "raw_msg": msg, 
+            "date": date,
             "subject": subject, 
             "from": sender, 
+            "to": to,
             "body": body
         })
 
@@ -474,11 +481,15 @@ def perform_actions_on_message(
     Returns result dict with info about performed actions and generated files.
     """
     msg = msg_record["raw_msg"]
+    date = msg_record.get("date", "")
     subject = msg_record.get("subject", "")
     sender = msg_record.get("from", "")
+    to = msg_record.get("to", "")
     body = msg_record.get("body", "")
 
-    result = {"id": msg_record.get("id"), "subject": subject, "from": sender, "performed": []}
+    result = {"id": msg_record.get("id"), "date": date,
+               "subject": subject, "from": sender, "to": to,
+               "performed": []}
 
     if not actions:
         return result
