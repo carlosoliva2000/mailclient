@@ -1,7 +1,6 @@
 import argparse
 import email
 import imaplib
-import json
 import os
 import poplib
 import random
@@ -9,12 +8,12 @@ import subprocess
 import sys
 import re
 import time
-import requests
 import webbrowser
 
 from mailbox import Message
 from typing import Any, Dict, List, Optional, Union, Tuple
 from datetime import datetime, timezone
+from email.utils import getaddresses
 
 from email import message_from_bytes
 from log import get_logger
@@ -211,8 +210,10 @@ def select_messages_pop3(
 
             subject = decode_mime_words(msg.get("Subject", ""))
             sender = email.utils.parseaddr(msg.get("From", ""))[1]
-            to = email.utils.parseaddr(msg.get("To", ""))[1]
             date_str = msg.get("Date")
+            to_addrs = [addr for _, addr in getaddresses(msg.get_all("To", []))]
+            cc_addrs = [addr for _, addr in getaddresses(msg.get_all("Cc", []))]
+            reply_to_addrs = [addr for _, addr in getaddresses(msg.get_all("Reply-To", []))]
 
             # Date filtering
             if date_str and (since_dt or before_dt):
@@ -244,7 +245,9 @@ def select_messages_pop3(
                 "date": date_str,
                 "subject": subject,
                 "from": sender,
-                "to": to,
+                "to": to_addrs,
+                "cc": cc_addrs,
+                "reply_to": reply_to_addrs,
                 "body": body
             })
 
@@ -361,9 +364,12 @@ def select_messages_imap(
         msg = message_from_bytes(raw)
         subject = decode_mime_words(msg.get("Subject", ""))
         sender = email.utils.parseaddr(msg.get("From", ""))[1]
-        to = email.utils.parseaddr(msg.get("To", ""))[1]
         date = msg.get("Date", "")
         body = extract_body_from_msg(msg)
+
+        to_addrs = [addr for _, addr in getaddresses(msg.get_all("To", []))]
+        cc_addrs = [addr for _, addr in getaddresses(msg.get_all("Cc", []))]
+        reply_to_addrs = [addr for _, addr in getaddresses(msg.get_all("Reply-To", []))]
 
         if not filter_by_regex(subject, body, sender, subject_re, body_re, from_re, regex_mode):
             logger.warning(f"Message {mid.decode()} skipped by regex filter")
@@ -375,7 +381,9 @@ def select_messages_imap(
             "date": date,
             "subject": subject, 
             "from": sender, 
-            "to": to,
+            "to": to_addrs,
+            "cc": cc_addrs,
+            "reply_to": reply_to_addrs,
             "body": body
         })
 
