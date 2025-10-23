@@ -1,6 +1,6 @@
 import argparse
 import sys
-from commands import send, read, forward  # , reply, forward
+from commands import send, read, reply, forward
 from log import get_logger, setup_global_logger
 # from mailclient.commands import send, read, reply, forward
 # from mailclient.log import get_logger
@@ -20,8 +20,8 @@ def main():
     read.register_arguments(read_parser)
 
     # --- REPLY ---
-    # reply_parser = subparsers.add_parser("reply", help="Reply to emails.")
-    # reply.register_arguments(reply_parser)
+    reply_parser = subparsers.add_parser("reply", help="Reply to emails.")
+    reply.register_arguments(reply_parser)
 
     # --- FORWARD ---
     forward_parser = subparsers.add_parser("forward", help="Forward emails.")
@@ -42,8 +42,8 @@ def main():
         send.send_email_cli(args)
     elif args.command == "read":
         read.read_email_cli(args)
-    # elif args.command == "reply":
-    #     reply.main(args)
+    elif args.command == "reply":
+        reply.reply_email_cli(args)
     elif args.command == "forward":
         forward.forward_email_cli(args)
     else:
