@@ -6,7 +6,7 @@ import smtplib
 # from contextlib import redirect_stdout
 from typing import List, Optional, Dict, Any
 from email import encoders, message_from_binary_file
-from email.utils import formatdate, make_msgid
+from email.utils import encode_rfc2231, formatdate, make_msgid
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
@@ -159,7 +159,7 @@ def build_email_message(
         try:
             template = get_template(template_name, **(template_params or {}))
             subject = subject or template.get("subject", "")
-            body = body or template.get("body", "")
+            body = template.get("body") or body
         except ValueError as e:
             logger.error(f"Error using template: {e}")
             raise ValueError(f"Error using template: {e}")
@@ -210,29 +210,50 @@ def build_email_message(
             try:
                 ctype, encoding = mimetypes.guess_type(path)
                 logger.info(f"Attaching file {path} with guessed type {ctype} and encoding {encoding}")
-                maintype, subtype = (ctype or "application/octet-stream").split("/", 1)
+
+                # Fallback to binary if type is unknown
+                if ctype is None:
+                    ctype = "application/octet-stream"
+
+                maintype, subtype = ctype.split("/", 1)
                 logger.info(f"Attachment maintype: {maintype}, subtype: {subtype}")
+
+                filename = os.path.basename(path)
+                safe_filename = ("utf-8", "", encode_rfc2231(filename))
+
                 if maintype == "message" and subtype == "rfc822":
                     # Special handling for .eml files
                     with open(path, "rb") as f:
                         eml_msg = message_from_binary_file(f)
                     part = MIMEMessage(eml_msg)
-                    part.add_header("Content-Disposition", "attachment", filename=os.path.basename(path))
+                    part.add_header("Content-Disposition", "attachment", filename=safe_filename)
+
+                elif maintype == "text":
+                    # Handle text files with UTF-8 fallback
+                    try:
+                        with open(path, "r", encoding="utf-8") as f:
+                            text = f.read()
+                    except UnicodeDecodeError:
+                        with open(path, "r", encoding="latin1", errors="ignore") as f:
+                            text = f.read()
+                    part = MIMEText(text, _subtype=subtype)
+                    part.add_header("Content-Disposition", "attachment", filename=safe_filename)
+
                 else:
+                    # Binary attachments
                     with open(path, "rb") as f:
                         part = MIMEBase(maintype, subtype)
                         part.set_payload(f.read())
-                
-                    # Encode the payload using Base64
                     encoders.encode_base64(part)
-                    part.add_header("Content-Disposition", "attachment", filename=os.path.basename(path))
+                    part.add_header("Content-Disposition", "attachment", filename=safe_filename)
+
                 msg.attach(part)
-            except FileNotFoundError as e:
-                logger.error(f"Attachment file not found: {path}")
-                raise FileNotFoundError(f"Attachment file not found: {path}")
+            except FileNotFoundError:
+                logger.error(f"Attachment file not found: {path}.")
+                raise FileNotFoundError(f"Attachment file not found: {path}.")
             except Exception as e:
-                logger.error(f"Error attaching file {path}: {e}")
-                raise Exception(f"Error attaching file {path}: {e}")
+                logger.error(f"Error attaching file {path}: {e}.")
+                raise Exception(f"Error attaching file {path}: {e}.")
 
     # Extra headers (for reply/forward)
     if extra_headers:
