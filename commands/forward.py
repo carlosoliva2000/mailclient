@@ -160,7 +160,7 @@ def forward_email_cli(args: argparse.Namespace):
             msg = message_from_bytes(raw_msg.as_bytes())
 
             date = msg_record.get("date", "")
-            subject = msg_record.get("subject", "")
+            subject: str = msg_record.get("subject", "")
             sender = msg_record.get("from", "")
             to = msg_record.get("to", "")
 
@@ -169,6 +169,8 @@ def forward_email_cli(args: argparse.Namespace):
             # elif args.use_template_subject and args.template:
             # TODO: re-enable template subject usage
             #     fwd_subject = get_template(args.template).get("subject", subject)
+            elif subject.startswith(args.subject_prefix) or subject.startswith("Fwd:"):
+                fwd_subject = subject
             else:
                 fwd_subject = f"{args.subject_prefix} {subject}".strip()
 
