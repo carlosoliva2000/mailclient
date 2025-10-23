@@ -163,7 +163,14 @@ def forward_email_cli(args: argparse.Namespace):
             subject = msg_record.get("subject", "")
             sender = msg_record.get("from", "")
             to = msg_record.get("to", "")
-            fwd_subject = f"{args.subject_prefix} {subject}".strip()
+
+            if args.subject:
+                fwd_subject = args.subject
+            # elif args.use_template_subject and args.template:
+            # TODO: re-enable template subject usage
+            #     fwd_subject = get_template(args.template).get("subject", subject)
+            else:
+                fwd_subject = f"{args.subject_prefix} {subject}".strip()
 
             attachments: List[str] = []
 
@@ -173,7 +180,7 @@ def forward_email_cli(args: argparse.Namespace):
                 # build_email_message should handle multipart messages
                 # so that method should take either string or Message or List[Tuple[str, str]] like extract_body_from_msg
                 # Right now templates cannot be used with forwarding inline because of this
-                
+
                 bodies = extract_body_from_msg(msg)
                 inline_body = ""
                 if bodies:
