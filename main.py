@@ -1,6 +1,6 @@
 import argparse
 import sys
-from commands import send, read, reply, forward
+from commands import send, read, reply, forward, register
 from log import get_logger, setup_global_logger
 # from mailclient.commands import send, read, reply, forward
 # from mailclient.log import get_logger
@@ -27,6 +27,10 @@ def main():
     forward_parser = subparsers.add_parser("forward", help="Forward emails.")
     forward.register_arguments(forward_parser)
 
+    # --- REGISTER ---
+    register_parser = subparsers.add_parser("register", help="Register a new user.")
+    register.register_arguments(register_parser)
+
     args, unknown = parser.parse_known_args()
 
     # Logging setup
@@ -46,6 +50,8 @@ def main():
         reply.reply_email_cli(args)
     elif args.command == "forward":
         forward.forward_email_cli(args)
+    elif args.command == "register":
+        register.register_user_cli(args)
     else:
         parser.print_help()
         sys.exit(1)
