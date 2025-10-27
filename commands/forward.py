@@ -10,7 +10,7 @@ from log import get_logger
 from config import get_mail_config, get_smtp_config, set_env_vars_from_args
 from commands.read import read_emails, save_full_email
 from commands.send import build_email_message, send_prepared_email
-from mail_utils import save_to_sent_folder, extract_body_from_msg
+from mail_utils import save_to_sent_folder, extract_body_from_msg, expand_all_recipients
 
 logger = get_logger()
 
@@ -33,7 +33,7 @@ def register_arguments(parser: argparse.ArgumentParser):
     parser.add_argument("--mail-password", help="IMAP password (default: same as SMTP password).")
     parser.add_argument("--mail-folder", default="Sent", help="IMAP folder name to save sent email (default: Sent).")
     parser.add_argument("sender", help="Sender email address.")
-    parser.add_argument("destination", nargs="+", help="Recipient email address/addresses.")
+    parser.add_argument("destination", nargs="*", help="Recipient email address/addresses.")
     parser.add_argument("--subject", help="Email subject. If used, overrides the forwarded email subject with prefix.  If used with --template, overrides template subject.")
     parser.add_argument("--body", help="Email body text.")
     parser.add_argument("--body-file", help="File containing email body text. If provided, overrides 'body'.")
@@ -59,6 +59,10 @@ def register_arguments(parser: argparse.ArgumentParser):
                         ])
     parser.add_argument("--template-params", help="JSON string of template parameters, e.g. '{\"username\": \"john.doe\", \"reset_link\": \"http://example.com/reset\"}'. "
                         "Depends on the template used.")
+    parser.add_argument("--send-separately", action="store_true", help="Send individual emails to each recipient instead of a single email to all recipients.")
+    parser.add_argument("--use-regex", action="store_true", help="Enable regex parsing in destination, cc and bcc addresses. Useful for bulk sending, spam or phishing simulations.")
+    parser.add_argument("--api-host", type=str, help="API server address for regex expansion of email addresses when --use-regex is enabled. If not provided, defaults to SMTP host.")
+    parser.add_argument("--api-port", type=int, default=9999, help="API server port for regex expansion of email addresses when --use-regex is enabled.")
     parser.add_argument("--use-template-subject", action="store_true", help="Use the subject defined in the template instead of prepending 'Fwd:' to the original subject.")
 
     # Filtering
@@ -120,6 +124,31 @@ def forward_email_cli(args: argparse.Namespace):
     
     mail_config = get_mail_config()
     print(mail_config)
+
+    # Get recipients if regex is used
+    if args.use_regex:
+        if not args.api_host:
+            args.api_host = args.smtp_host
+        
+        args.destination, args.cc, args.bcc = expand_all_recipients(
+            server=args.api_host,
+            port=args.api_port,
+            destination=args.destination,
+            cc=args.cc,
+            bcc=args.bcc
+        )
+        
+        # Exclude sender from recipient lists if present
+        if args.sender in args.destination:
+            args.destination.remove(args.sender)
+        if args.sender in args.cc:
+            args.cc.remove(args.sender)
+        if args.sender in args.bcc:
+            args.bcc.remove(args.sender)
+
+        logger.info(f"Final recipient list: {args.destination}")
+        logger.info(f"Final CC list: {args.cc}")
+        logger.info(f"Final BCC list: {args.bcc}")
 
     # Read filtered messages
     logger.info("Fetching messages to forward...")
@@ -221,6 +250,8 @@ def forward_email_cli(args: argparse.Namespace):
                             #     f.write(part.get_payload(decode=True))
                             #     attachments.append(f.name)
                             #     logger.info(f"Temporarily saved attachment: {f.name}")
+
+                # TODO: Send separately if requested
 
                 logger.info("Forwarding inline...")
                 built_msg = build_email_message(
