@@ -61,7 +61,7 @@ def change_password(
     """Change password for the provided user."""
     logger.info(f"Changing password for user '{username}' to '{new_password}' on server '{server}:{port}'")
 
-    # Send a POST request to /update-password endpoint
+    # Send a PUT request to /update-password endpoint
     url = f"http://{server}:{port}/update-password"
     payload = {
         "username": username,

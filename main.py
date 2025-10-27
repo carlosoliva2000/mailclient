@@ -1,6 +1,6 @@
 import argparse
 import sys
-from commands import send, read, reply, forward, register, passwd
+from commands import send, read, reply, forward, register, passwd, delete
 from log import get_logger, setup_global_logger
 # from mailclient.commands import send, read, reply, forward
 # from mailclient.log import get_logger
@@ -35,6 +35,10 @@ def main():
     passwd_parser = subparsers.add_parser("passwd", help="Change user password.")
     passwd.register_arguments(passwd_parser)
 
+    # --- DELETE ---
+    delete_parser = subparsers.add_parser("delete", help="Delete a user.")
+    delete.register_arguments(delete_parser)
+
     args, unknown = parser.parse_known_args()
 
     # Logging setup
@@ -58,6 +62,8 @@ def main():
         register.register_user_cli(args)
     elif args.command == "passwd":
         passwd.passwd_cli(args)
+    elif args.command == "delete":
+        delete.delete_cli(args)
     else:
         parser.print_help()
         sys.exit(1)
