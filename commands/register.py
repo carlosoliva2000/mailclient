@@ -83,7 +83,7 @@ def register_user(
     try:
         response = requests.post(url, json=payload)
         if response.status_code != 201:
-            logger.error(f"Registration failed with status code {response.status_code}: {response.text}")
+            logger.error(f"Registration failed with status code {response.status_code}: {response.json()}")
             return False, response.json()
         
         logger.info("Registration successful.")
