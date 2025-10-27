@@ -1,6 +1,7 @@
 import imaplib
 import re
 import time
+import requests
 
 from datetime import datetime
 from typing import Dict, List, Optional, Union, Tuple
@@ -164,6 +165,54 @@ def extract_body_from_msg(msg: Message) -> List[Tuple[str, str]]:
             pass
 
     return bodies
+
+
+def expand_addresses(
+    server: str,
+    port: int,
+    addresses: List[str],
+) -> List[str]:
+    """
+    Expand a list of addresses by querying the server for each address.
+    Returns a list of expanded addresses.
+    """
+    expanded_addresses = []
+
+    for addr in addresses:
+        try:
+            response = requests.get(
+                f"http://{server}:{port}/users?filter_by={addr}"
+            )
+            if response.status_code == 200:
+                matches = response.json() or []
+                logger.info(f"Server returned {len(matches)} matches for address '{addr}': {matches}.")
+                expanded_addresses.extend(matches)
+                logger.info(f"Address '{addr}' expanded to: {matches}.")
+            else:
+                logger.error(f"Failed to expand address '{addr}': {response.json()}.")
+        except Exception as e:
+            logger.error(f"Error expanding address '{addr}': {e}.")
+
+    expanded_addresses = list(set(expanded_addresses))  # Remove duplicates
+    return expanded_addresses
+
+
+def expand_all_recipients(
+    server: str,
+    port: int,
+    destination: List[str],
+    cc: Optional[List[str]] = None,
+    bcc: Optional[List[str]] = None,
+) -> Tuple[List[str], List[str], List[str]]:
+    """
+    Expand destination, cc, and bcc lists using regex patterns, querying the server for matching addresses.
+    Returns three lists: (expanded_recipients, expanded_cc, expanded_bcc)
+    """
+    expanded_destination = expand_addresses(server, port, destination)
+    expanded_cc = expand_addresses(server, port, cc or [])
+    expanded_bcc = expand_addresses(server, port, bcc or [])
+
+    return expanded_destination, expanded_cc, expanded_bcc
 
 
 # TODO: Implement the following utility functions as needed

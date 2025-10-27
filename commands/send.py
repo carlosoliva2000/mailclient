@@ -17,7 +17,7 @@ from email_templates import get_template
 from log import get_logger
 from config import get_smtp_config, set_env_vars_from_args
 from connection import connect_smtp, connect_mail
-from mail_utils import save_to_sent_folder
+from mail_utils import save_to_sent_folder, expand_all_recipients
 
 
 logger = get_logger()
@@ -39,14 +39,14 @@ def register_arguments(parser: argparse.ArgumentParser):
     parser.add_argument("--mail-password", help="IMAP password (default: same as SMTP password).")
     parser.add_argument("--mail-folder", default="Sent", help="IMAP folder name to save sent email (default: Sent).")
     parser.add_argument("sender", help="Sender email address.")
-    parser.add_argument("destination", nargs="+", help="Recipient email address/addresses.")
+    parser.add_argument("destination", nargs="*", help="Recipient email address/addresses. If wildcards are needed (only * and ?), use --use-regex.")
     parser.add_argument("--subject", help="Email subject. If used with --template, overrides template subject.")
     parser.add_argument("--body", help="Email body text.")
     parser.add_argument("--body-file", help="File containing email body text. If provided, overrides 'body'.")
     parser.add_argument("--body-image", action="append", help="Paths to inline image files. You can specify this argument as many images as needed.")
     parser.add_argument("--attach", action="append", help="Paths to attachment files. You can specify this argument as many attachments as needed.")
-    parser.add_argument("--cc", action="append", help="CC recipient email addresses. You can specify this argument as many addresses as needed.")
-    parser.add_argument("--bcc", action="append", help="BCC recipient email addresses. You can specify this argument as many addresses as needed.")
+    parser.add_argument("--cc", action="append", help="CC recipient email addresses. You can specify this argument as many addresses as needed. If wildcards are needed (only * and ?), use --use-regex.")
+    parser.add_argument("--bcc", action="append", help="BCC recipient email addresses. You can specify this argument as many addresses as needed. If wildcards are needed (only * and ?), use --use-regex.")
     parser.add_argument("--template", help="Email template name to use.",
                         choices=[
                             "phishing_login", 
@@ -65,6 +65,9 @@ def register_arguments(parser: argparse.ArgumentParser):
                         ])
     parser.add_argument("--template-params", help="JSON string of template parameters, e.g. '{\"username\": \"john.doe\", \"reset_link\": \"http://example.com/reset\"}'. "
                         "Depends on the template used.")
+    parser.add_argument("--use-regex", action="store_true", help="Enable regex parsing in destination, cc and bcc addresses. Useful for bulk sending, spam or phishing simulations.")
+    parser.add_argument("--api-host", type=str, help="API server address for regex expansion of email addresses when --use-regex is enabled. If not provided, defaults to SMTP host.")
+    parser.add_argument("--api-port", type=int, default=9999, help="API server port for regex expansion of email addresses when --use-regex is enabled.")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode.", required=False)
 
 
@@ -83,6 +86,31 @@ def send_email_cli(args: argparse.Namespace):
     smtp_config = get_smtp_config(include_imap=args.save_sent)
 
     logger.debug(f"SMTP Configuration: {smtp_config}")
+
+    # Get recipients if regex is used
+    if args.use_regex:
+        if not args.api_host:
+            args.api_host = args.smtp_host
+        
+        args.destination, args.cc, args.bcc = expand_all_recipients(
+            server=args.api_host,
+            port=args.api_port,
+            destination=args.destination,
+            cc=args.cc,
+            bcc=args.bcc
+        )
+        
+        # Exclude sender from recipient lists if present
+        if args.sender in args.destination:
+            args.destination.remove(args.sender)
+        if args.sender in args.cc:
+            args.cc.remove(args.sender)
+        if args.sender in args.bcc:
+            args.bcc.remove(args.sender)
+
+        logger.info(f"Final recipient list: {args.destination}")
+        logger.info(f"Final CC list: {args.cc}")
+        logger.info(f"Final BCC list: {args.bcc}")
 
     # Build message
     msg = build_email_message(
