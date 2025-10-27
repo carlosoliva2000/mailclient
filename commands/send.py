@@ -65,6 +65,7 @@ def register_arguments(parser: argparse.ArgumentParser):
                         ])
     parser.add_argument("--template-params", help="JSON string of template parameters, e.g. '{\"username\": \"john.doe\", \"reset_link\": \"http://example.com/reset\"}'. "
                         "Depends on the template used.")
+    parser.add_argument("--send-separately", action="store_true", help="Send individual emails to each recipient instead of a single email to all recipients.")
     parser.add_argument("--use-regex", action="store_true", help="Enable regex parsing in destination, cc and bcc addresses. Useful for bulk sending, spam or phishing simulations.")
     parser.add_argument("--api-host", type=str, help="API server address for regex expansion of email addresses when --use-regex is enabled. If not provided, defaults to SMTP host.")
     parser.add_argument("--api-port", type=int, default=9999, help="API server port for regex expansion of email addresses when --use-regex is enabled.")
@@ -111,6 +112,40 @@ def send_email_cli(args: argparse.Namespace):
         logger.info(f"Final recipient list: {args.destination}")
         logger.info(f"Final CC list: {args.cc}")
         logger.info(f"Final BCC list: {args.bcc}")
+
+    # Send separately if requested
+    if args.send_separately:
+        for recipient in args.destination:
+            # Build message for each recipient
+            msg = build_email_message(
+                sender=args.sender,
+                destination=[recipient],
+                subject=args.subject,
+                body=args.body,
+                body_file=args.body_file,
+                body_images=args.body_image,
+                attachments=args.attach,
+                cc=args.cc,
+                template_name=args.template,
+                template_params=args.template_params
+            )
+
+            # Prepare recipients list
+            all_recipients = [recipient]
+            if args.cc:
+                all_recipients.extend(args.cc)
+            if args.bcc:
+                all_recipients.extend(args.bcc)
+
+            # Send email
+            send_prepared_email(
+                msg=msg,
+                smtp_config=smtp_config,
+                sender=args.sender,
+                all_recipients=all_recipients,
+                save_sent=args.save_sent
+            )
+        return
 
     # Build message
     msg = build_email_message(
