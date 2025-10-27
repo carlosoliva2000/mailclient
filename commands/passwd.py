@@ -71,7 +71,7 @@ def change_password(
     logger.debug(f"Changing password payload: {payload}")
     try:
         response = requests.put(url, json=payload)
-        if response.status_code != 201:
+        if response.status_code != 200:
             logger.error(f"Changing password failed with status code {response.status_code}: {response.text}")
             return False, response.json()
         
