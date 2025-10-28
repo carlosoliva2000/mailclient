@@ -4,9 +4,10 @@ import mimetypes
 import smtplib
 
 # from contextlib import redirect_stdout
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple, Union
 from email import encoders, message_from_binary_file
 from email.utils import encode_rfc2231, formatdate, make_msgid
+from email.message import Message
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
@@ -194,11 +195,29 @@ def send_email_cli(args: argparse.Namespace):
     # )
 
 
+def build_template_email_message(
+    template_name: str,
+    template_params: Optional[Dict[str, Any]]
+) -> Dict[str, str]:
+    """
+    Build email subject and body using a template and parameters.
+    Returns a dictionary with 'subject' and 'body'.
+    """
+    try:
+        template = get_template(template_name, **template_params or {})
+        subject = template.get("subject", "")
+        body = template.get("body", "")
+        return {"subject": subject, "body": body}
+    except ValueError as e:
+        logger.error(f"Error using template: {e}")
+        raise ValueError(f"Error using template: {e}")
+
+
 def build_email_message(
     sender: str,
     destination: List[str],
     subject: Optional[str],
-    body: Optional[str] = None,
+    body: Optional[Union[str, Message, List[Tuple[str, str]]]] = None,
     body_file: Optional[str] = None,
     body_images: Optional[List[str]] = None,
     attachments: Optional[List[str]] = None,
@@ -206,6 +225,8 @@ def build_email_message(
     template_name: Optional[str] = None,
     template_params: Optional[Dict[str, Any]] = None,
     extra_headers: Optional[Dict[str, str]] = None,
+    body_type: str = "html",
+    join_body_parts: bool = True
 ) -> MIMEMultipart:
     """
     Build an email message (MIME) with optional templates, attachments, inline images, etc.
@@ -219,13 +240,9 @@ def build_email_message(
 
     # Subject, body and template handling
     if template_name:
-        try:
-            template = get_template(template_name, **(template_params or {}))
-            subject = subject or template.get("subject", "")
-            body = template.get("body") or body
-        except ValueError as e:
-            logger.error(f"Error using template: {e}")
-            raise ValueError(f"Error using template: {e}")
+        template_dict = build_template_email_message(template_name, template_params)
+        subject = subject or template_dict.get("subject", "")
+        body = body or template_dict.get("body", "")
         
     msg["Subject"] = subject or "No Subject"
     msg["Date"] = formatdate(localtime=True)
@@ -247,7 +264,33 @@ def build_email_message(
     else:
         mail_body = ""
 
-    msg.attach(MIMEText(mail_body, "html"))
+    # Handle different body types
+    if isinstance(body, list):
+        # If body is a list of (ctype, text) tuples
+        if join_body_parts:
+            # Try to join all parts into the message
+            # At least, parts related with the same ctype
+            body_dict = {}
+            for ctype, text in body:
+                if ctype in body_dict:
+                    if ctype == "text/html":
+                        body_dict[ctype] += "<br>" + text
+                    else:  #  ctype == "text/plain":
+                        body_dict[ctype] += "\n" + text
+                else:
+                    body_dict[ctype] = text
+            
+            for ctype, text in body_dict.items():
+                msg.attach(MIMEText(text, ctype.split("/")[1]))
+        else:
+            for ctype, text in body:
+                msg.attach(MIMEText(text, ctype.split("/")[1]))
+    elif isinstance(body, Message):
+        # If body is already a Message object
+        msg.attach(MIMEMessage(body))
+    elif isinstance(mail_body, str):
+        # Plain text or HTML body
+        msg.attach(MIMEText(mail_body, body_type))
 
     # Inline images
     if body_images:
