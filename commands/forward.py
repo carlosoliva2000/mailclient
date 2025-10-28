@@ -195,9 +195,6 @@ def forward_email_cli(args: argparse.Namespace):
 
             if args.subject:
                 fwd_subject = args.subject
-            # elif args.use_template_subject and args.template:
-            # TODO: re-enable template subject usage
-            #     fwd_subject = get_template(args.template).get("subject", subject)
             elif subject.startswith(args.subject_prefix) or subject.startswith("Fwd:"):
                 fwd_subject = subject
             else:
@@ -222,6 +219,10 @@ def forward_email_cli(args: argparse.Namespace):
                     template_dict = build_template_email_message(args.template, args.template_params)
                     template_body = template_dict.get("body", "")
                     bodies.insert(0, ("text/html", template_body))
+                    if args.use_template_subject:  # Use template subject if requested
+                        logger.info("Using subject from template.")
+                        fwd_subject = template_dict.get("subject", fwd_subject)
+                        logger.info(f"New subject: {fwd_subject}")
                 elif args.body_file:
                     logger.info(f"Reading body from file: {args.body_file}")
                     try:
@@ -314,6 +315,10 @@ def forward_email_cli(args: argparse.Namespace):
             elif args.mode == "attachment":                
                 filepath = save_full_email(raw_msg, tempfile.gettempdir(), subject)
                 logger.info(f"Temporarily saved forwarded email as attachment: {filepath}")
+
+                if args.template and args.use_template_subject:
+                    template_dict = build_template_email_message(args.template, args.template_params)
+                    fwd_subject = template_dict.get("subject", fwd_subject)
 
                 built_msg = build_email_message(
                     sender=args.sender,
