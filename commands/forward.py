@@ -207,11 +207,6 @@ def forward_email_cli(args: argparse.Namespace):
 
             # Prepare inline forward
             if args.mode == "inline":
-                # TODO: fix body extraction to handle multipart properly
-                # build_email_message should handle multipart messages
-                # so that method should take either string or Message or List[Tuple[str, str]] like extract_body_from_msg
-                # Right now templates cannot be used with forwarding inline because of this
-
                 bodies = extract_body_from_msg(msg)
                 forward_text = ("text/html",
                     f"<br><br>---------- Forwarded message ---------<br>"
