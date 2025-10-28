@@ -8,7 +8,7 @@ from email.utils import make_msgid, getaddresses
 from log import get_logger
 from config import get_mail_config, get_smtp_config, set_env_vars_from_args
 from commands.read import read_emails
-from commands.send import build_email_message, send_prepared_email
+from commands.send import build_email_message, send_prepared_email, build_template_email_message
 from mail_utils import extract_body_from_msg
 
 
@@ -144,38 +144,95 @@ def reply_email_cli(args: argparse.Namespace):
             # Subject
             if args.subject:
                 reply_subject = args.subject
-            # elif args.use_template_subject and args.template:
-            # TODO: re-enable template subject usage
-            #     fwd_subject = get_template(args.template).get("subject", subject)
             elif orig_subject.lower().startswith("re:"):
                 reply_subject = orig_subject
             else:
                 reply_subject = f"Re: {orig_subject}"
 
             # Body
+            new_bodies = []
             bodies = extract_body_from_msg(msg)
+
             if args.no_quote_original:
-                reply_body = args.template or args.body_file or args.body or ""
-                # TODO: If template is used, load template body
+                if args.template:
+                    template_dict = build_template_email_message(args.template, args.template_params)
+                    reply_body = template_dict.get("body", "")
+                    if args.use_template_subject:
+                        reply_subject = template_dict.get("subject", reply_subject)
+                elif args.body_file:
+                    logger.info(f"Reading body from file: {args.body_file}")
+                    try:
+                        with open(os.path.expanduser(args.body_file), "r", encoding="utf-8") as f:
+                            file_body = f.read()
+                            logger.info(f"Read body from file: {file_body[:100]}...")
+                            reply_body = file_body
+                    except Exception as e:
+                        logger.error(f"Failed to read body from file '{args.body_file}': {e}. Using empty body.")
+                        reply_body = ""
+                elif args.body:
+                    reply_body = args.body
+                else:
+                    reply_body = ""
+                
+                new_bodies.append(("text/html", reply_body))
             else:
                 logger.info("Quoting original message in reply body...")
                 logger.info(f"Bodies extracted: {bodies}")
                 quoted_text = ""
                 if bodies:
-                    plain = next((b for c, b in bodies if c == "text/plain"), None)
-                    html = next((b for c, b in bodies if c == "text/html"), None)
-                    logger.info(f"Plain text body to quote: {plain}")
-                    if plain:
-                        quoted_lines = "\n".join(f"> {line}" for line in plain.splitlines())
-                        quoted_text = f"\n\nOn {orig_date}, {orig_sender} wrote:\n{quoted_lines}"
-                    elif html:
-                        # Keep HTML format, quote lines
-                        quoted_text = (
-                            f"<br><br><blockquote style='margin-left:1em; border-left:2px solid #ccc; padding-left:1em;'>"
-                            f"On {orig_date}, {orig_sender} wrote:<br>{html}</blockquote>"
-                        )
+                    if args.template:
+                        template_dict = build_template_email_message(args.template, args.template_params)
+                        template_body = template_dict.get("body", "")
+                        new_body = ("text/html", template_body)
+                        if args.use_template_subject:
+                            reply_subject = template_dict.get("subject", reply_subject)
+                    elif args.body_file:
+                        logger.info(f"Reading body from file: {args.body_file}")
+                        try:
+                            with open(os.path.expanduser(args.body_file), "r", encoding="utf-8") as f:
+                                file_body = f.read()
+                                logger.info(f"Read body from file: {file_body[:100]}...")
+                                new_body = ("text/html", file_body)
+                        except Exception as e:
+                            logger.error(f"Failed to read body from file '{args.body_file}': {e}. Using empty body.")
+                            new_body = ("text/html", "")
+                    else:  #  args.body:
+                        new_body = ("text/html", args.body)
+                    
+                    # Check if bodies contain plain text or HTML
+                    has_html = any(c == "text/html" for c, b in bodies)
 
-                reply_body = (args.body or "") + quoted_text
+                    if has_html:
+                        quoted_text = "<br>".join(b for c, b in bodies)
+                        reply_body = ("text/html",
+                            f"<br><br><blockquote style='margin-left:1em; border-left:2px solid #ccc; padding-left:1em;'>"
+                            f"On {orig_date}, {orig_sender} wrote:<br>{quoted_text}</blockquote>"
+                        )
+                    else:
+                        quoted_text = "\n".join(b for c, b in bodies)
+                        quoted_lines = "\n".join(f"> {line}" for line in quoted_text.splitlines())
+                        reply_body = ("text/plain",
+                            f"{quoted_text}\n\nOn {orig_date}, {orig_sender} wrote:\n{quoted_lines}")
+                        
+                    
+                    new_bodies.append(new_body)
+                    new_bodies.append(reply_body)
+
+
+                #     plain = next((b for c, b in bodies if c == "text/plain"), None)
+                #     html = next((b for c, b in bodies if c == "text/html"), None)
+                #     logger.info(f"Plain text body to quote: {plain}")
+                #     if plain:
+                #         quoted_lines = "\n".join(f"> {line}" for line in plain.splitlines())
+                #         quoted_text = f"\n\nOn {orig_date}, {orig_sender} wrote:\n{quoted_lines}"
+                #     elif html:
+                #         # Keep HTML format, quote lines
+                #         quoted_text = (
+                #             f"<br><br><blockquote style='margin-left:1em; border-left:2px solid #ccc; padding-left:1em;'>"
+                #             f"On {orig_date}, {orig_sender} wrote:<br>{html}</blockquote>"
+                #         )
+
+                # reply_body = (args.body or "") + quoted_text
 
             # Attachments
             attachments: List[str] = []
@@ -243,7 +300,7 @@ def reply_email_cli(args: argparse.Namespace):
                 sender=args.sender,
                 destination=reply_to,
                 subject=reply_subject,
-                body=reply_body,
+                body=new_bodies,
                 body_file=args.body_file,
                 body_images=args.body_image,
                 attachments=attachments,
