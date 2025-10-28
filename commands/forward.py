@@ -9,7 +9,7 @@ from email import message_from_bytes
 from log import get_logger
 from config import get_mail_config, get_smtp_config, set_env_vars_from_args
 from commands.read import read_emails, save_full_email
-from commands.send import build_email_message, send_prepared_email
+from commands.send import build_email_message, send_prepared_email, build_template_email_message
 from mail_utils import save_to_sent_folder, extract_body_from_msg, expand_all_recipients
 
 logger = get_logger()
@@ -213,21 +213,52 @@ def forward_email_cli(args: argparse.Namespace):
                 # Right now templates cannot be used with forwarding inline because of this
 
                 bodies = extract_body_from_msg(msg)
-                inline_body = ""
-                if bodies:
-                    plain = next((b for c, b in bodies if c == "text/plain"), None)
-                    html = next((b for c, b in bodies if c == "text/html"), None)
-                    inline_body = plain or html or ""
-                # own_body = args.template or args.body or ""
-                forward_text = (
-                    f"{args.body or ''}"
+                forward_text = ("text/html",
                     f"<br><br>---------- Forwarded message ---------<br>"
                     f"From: {sender}<br>"
                     f"Date: {date}<br>"
                     f"Subject: {subject}<br>"
                     f"To: {to}<br><br>"
-                    f"{inline_body}"
                 )
+                bodies.insert(0, forward_text)
+
+                # Check if template is used
+                if args.template:
+                    template_dict = build_template_email_message(args.template, args.template_params)
+                    template_body = template_dict.get("body", "")
+                    bodies.insert(0, ("text/html", template_body))
+                elif args.body_file:
+                    logger.info(f"Reading body from file: {args.body_file}")
+                    try:
+                        with open(os.path.expanduser(args.body_file), "r", encoding="utf-8") as f:
+                            file_body = f.read()
+                            logger.info(f"Read body from file: {file_body[:100]}...")
+                            new_body = ("text/html", file_body)
+                            bodies.insert(0, new_body)
+                    except Exception as e:
+                        logger.error(f"Failed to read body file '{args.body_file}': {e}")
+                elif args.body:
+                    new_body = ("text/html", args.body or "")
+                    bodies.insert(0, new_body)
+                else:
+                    logger.warning("No body, body file, or template provided for inline forward. Only original message will be included.")
+                
+
+                # inline_body = ""
+                # if bodies:
+                #     plain = next((b for c, b in bodies if c == "text/plain"), None)
+                #     html = next((b for c, b in bodies if c == "text/html"), None)
+                #     inline_body = plain or html or ""
+                # # own_body = args.template or args.body or ""
+                # forward_text = (
+                #     f"{args.body or ''}"
+                #     f"<br><br>---------- Forwarded message ---------<br>"
+                #     f"From: {sender}<br>"
+                #     f"Date: {date}<br>"
+                #     f"Subject: {subject}<br>"
+                #     f"To: {to}<br><br>"
+                #     f"{inline_body}"
+                # )
                 # print(fwd_subject)
                 # print()
                 # print(forward_text)
@@ -258,13 +289,10 @@ def forward_email_cli(args: argparse.Namespace):
                     sender=args.sender,
                     destination=to_addresses,
                     subject=fwd_subject,
-                    body=forward_text,
-                    body_file=None,
+                    body=bodies,
                     body_images=args.body_image,
                     attachments=attachments,
-                    cc=args.cc,
-                    template_name=args.template,
-                    template_params=args.template_params,
+                    cc=args.cc
                 )
 
                 all_recipients = to_addresses[:]
