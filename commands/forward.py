@@ -184,28 +184,54 @@ def forward_email_cli(args: argparse.Namespace):
 
     for msg_record in messages:
         print(f"Msg record: {msg_record}")
-        try:
-            forward_email(
-                original_msg_record=msg_record,
-                sender=args.sender,
-                to_addresses=to_addresses,
-                subject=args.subject,
-                subject_prefix=args.subject_prefix,
-                body=args.body,
-                body_file=args.body_file,
-                body_images=args.body_image,
-                attachments=args.attach,
-                cc=args.cc,
-                bcc=args.bcc,
-                template_name=args.template,
-                template_params=args.template_params,
-                use_template_subject=args.use_template_subject,
-                mode=args.mode,
-                no_attachments=args.no_attachments,
-                save_sent=args.save_sent
-            )
-        except Exception as e:
-            logger.error(f"Failed to forward message '{msg_record.get('subject', '')}': {e}")
+        # Check if send separately
+        if args.send_separately:
+            for recipient in to_addresses:
+                try:
+                    forward_email(
+                        original_msg_record=msg_record,
+                        sender=args.sender,
+                        to_addresses=[recipient],
+                        subject=args.subject,
+                        subject_prefix=args.subject_prefix,
+                        body=args.body,
+                        body_file=args.body_file,
+                        body_images=args.body_image,
+                        attachments=args.attach,
+                        cc=args.cc,
+                        bcc=args.bcc,
+                        template_name=args.template,
+                        template_params=args.template_params,
+                        use_template_subject=args.use_template_subject,
+                        mode=args.mode,
+                        no_attachments=args.no_attachments,
+                        save_sent=args.save_sent
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to forward message '{msg_record.get('subject', '')}' to '{recipient}': {e}.")
+        else:
+            try:
+                forward_email(
+                    original_msg_record=msg_record,
+                    sender=args.sender,
+                    to_addresses=to_addresses,
+                    subject=args.subject,
+                    subject_prefix=args.subject_prefix,
+                    body=args.body,
+                    body_file=args.body_file,
+                    body_images=args.body_image,
+                    attachments=args.attach,
+                    cc=args.cc,
+                    bcc=args.bcc,
+                    template_name=args.template,
+                    template_params=args.template_params,
+                    use_template_subject=args.use_template_subject,
+                    mode=args.mode,
+                    no_attachments=args.no_attachments,
+                    save_sent=args.save_sent
+                )
+            except Exception as e:
+                logger.error(f"Failed to forward message '{msg_record.get('subject', '')}': {e}.")
 
     logger.info("Forwarding completed.")
 
