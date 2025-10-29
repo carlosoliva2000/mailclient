@@ -161,27 +161,53 @@ def reply_email_cli(args: argparse.Namespace):
     logger.info(f"Preparing to reply to {len(messages)} message(s)...")
 
     for msg_record in messages:
-        try:
-            reply_email(
-                original_msg_record=msg_record,
-                sender=args.sender,
-                reply_to=args.reply_to,
-                subject=args.subject,
-                body=args.body,
-                body_file=args.body_file,
-                body_images=args.body_image,
-                attachments=args.attach,
-                cc=args.cc,
-                bcc=args.bcc,
-                template_name=args.template,
-                template_params=args.template_params,
-                use_template_subject=args.use_template_subject,
-                no_quote_original=args.no_quote_original,
-                reply_all=args.reply_all,
-                save_sent=args.save_sent
-            )
-        except Exception as e:
-            logger.error(f"Failed to reply to '{msg_record.get('subject', '')}': {e}.")
+        # Check if send separately is enabled
+        if args.send_separately:
+            individual_reply_to = args.reply_to or [msg_record.get("from")]
+            for recipient in individual_reply_to:
+                try:
+                    reply_email(
+                        original_msg_record=msg_record,
+                        sender=args.sender,
+                        reply_to=[recipient],
+                        subject=args.subject,
+                        body=args.body,
+                        body_file=args.body_file,
+                        body_images=args.body_image,
+                        attachments=args.attach,
+                        cc=args.cc,
+                        bcc=args.bcc,
+                        template_name=args.template,
+                        template_params=args.template_params,
+                        use_template_subject=args.use_template_subject,
+                        no_quote_original=args.no_quote_original,
+                        reply_all=args.reply_all,  # TODO: check this! This is not compatible at all with send_separately
+                        save_sent=args.save_sent
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to reply to '{msg_record.get('subject', '')}' for recipient '{recipient}': {e}.")
+        else:
+            try:
+                reply_email(
+                    original_msg_record=msg_record,
+                    sender=args.sender,
+                    reply_to=args.reply_to,
+                    subject=args.subject,
+                    body=args.body,
+                    body_file=args.body_file,
+                    body_images=args.body_image,
+                    attachments=args.attach,
+                    cc=args.cc,
+                    bcc=args.bcc,
+                    template_name=args.template,
+                    template_params=args.template_params,
+                    use_template_subject=args.use_template_subject,
+                    no_quote_original=args.no_quote_original,
+                    reply_all=args.reply_all,
+                    save_sent=args.save_sent
+                )
+            except Exception as e:
+                logger.error(f"Failed to reply to '{msg_record.get('subject', '')}': {e}.")
 
     logger.info("Reply operation completed.")
 
