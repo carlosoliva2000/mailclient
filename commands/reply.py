@@ -132,6 +132,31 @@ def reply_email_cli(args: argparse.Namespace):
         logger.info("No messages matched filters. Nothing to reply to.")
         return
     
+    # Get recipients if regex is used
+    if args.use_regex:
+        if not args.api_host:
+            args.api_host = args.smtp_host
+        
+        args.reply_to, args.cc, args.bcc = expand_all_recipients(
+            server=args.api_host,
+            port=args.api_port,
+            destination=args.reply_to,
+            cc=args.cc,
+            bcc=args.bcc
+        )
+        
+        # Exclude sender from recipient lists if present
+        if args.sender in args.reply_to:
+            args.reply_to.remove(args.sender)
+        if args.sender in args.cc:
+            args.cc.remove(args.sender)
+        if args.sender in args.bcc:
+            args.bcc.remove(args.sender)
+
+        logger.info(f"Final reply_to list: {args.reply_to}")
+        logger.info(f"Final CC list: {args.cc}")
+        logger.info(f"Final BCC list: {args.bcc}")
+    
     logger.debug(f"ARGS: {args}")
     logger.info(f"Preparing to reply to {len(messages)} message(s)...")
 
