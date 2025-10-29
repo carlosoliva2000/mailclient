@@ -3,7 +3,7 @@ import argparse
 import os
 import sys
 import tempfile
-from typing import List
+from typing import Any, Dict, List, Optional
 from email import message_from_bytes
 
 from log import get_logger
@@ -125,6 +125,31 @@ def forward_email_cli(args: argparse.Namespace):
     mail_config = get_mail_config()
     print(mail_config)
 
+    # Read filtered messages
+    logger.info("Fetching messages to forward...")
+    messages = read_emails(
+        mail_config=mail_config,
+        limit=args.limit,
+        include_seen=args.include_seen,
+        sort=args.sort,
+        date_since=args.date_since,
+        date_before=args.date_before,
+        random_pick=args.random,
+        subject_regex=args.subject_regex,
+        body_regex=args.body_regex,
+        from_regex=args.from_regex,
+        regex_mode=args.regex_mode,
+        actions=args.action,
+        action_mode=args.action_mode,
+        download_dir=args.download_dir,
+        execute_path=args.execute_path,
+        pop3_delete=args.pop3_delete
+    )
+
+    if not messages:
+        logger.info("No messages matched filters. Nothing to forward.")
+        return
+    
     # Get recipients if regex is used
     if args.use_regex:
         if not args.api_host:
@@ -150,31 +175,6 @@ def forward_email_cli(args: argparse.Namespace):
         logger.info(f"Final CC list: {args.cc}")
         logger.info(f"Final BCC list: {args.bcc}")
 
-    # Read filtered messages
-    logger.info("Fetching messages to forward...")
-    messages = read_emails(
-        mail_config=mail_config,
-        limit=args.limit,
-        include_seen=args.include_seen,
-        sort=args.sort,
-        date_since=args.date_since,
-        date_before=args.date_before,
-        random_pick=args.random,
-        subject_regex=args.subject_regex,
-        body_regex=args.body_regex,
-        from_regex=args.from_regex,
-        regex_mode=args.regex_mode,
-        actions=args.action,
-        action_mode=args.action_mode,
-        download_dir=args.download_dir,
-        execute_path=args.execute_path,
-        pop3_delete=args.pop3_delete
-    )
-
-    if not messages:
-        logger.info("No messages matched filters. Nothing to forward.")
-        return
-
     to_addresses = args.destination # [addr.strip() for addr in args.to.split(",") if addr.strip()]
     if not to_addresses:
         logger.error("No valid recipient addresses provided.")
@@ -185,184 +185,220 @@ def forward_email_cli(args: argparse.Namespace):
     for msg_record in messages:
         print(f"Msg record: {msg_record}")
         try:
-            raw_msg = msg_record["raw_msg"]
-            msg = message_from_bytes(raw_msg.as_bytes())
-
-            date = msg_record.get("date", "")
-            subject: str = msg_record.get("subject", "")
-            sender = msg_record.get("from", "")
-            to = msg_record.get("to", "")
-
-            if args.subject:
-                fwd_subject = args.subject
-            elif subject.startswith(args.subject_prefix) or subject.startswith("Fwd:"):
-                fwd_subject = subject
-            else:
-                fwd_subject = f"{args.subject_prefix} {subject}".strip()
-
-            attachments: List[str] = []
-
-            # Prepare inline forward
-            if args.mode == "inline":
-                bodies = extract_body_from_msg(msg)
-                forward_text = ("text/html",
-                    f"<br><br>---------- Forwarded message ---------<br>"
-                    f"From: {sender}<br>"
-                    f"Date: {date}<br>"
-                    f"Subject: {subject}<br>"
-                    f"To: {to}<br><br>"
-                )
-                bodies.insert(0, forward_text)
-
-                # Check if template is used
-                if args.template:
-                    template_dict = build_template_email_message(args.template, args.template_params)
-                    template_body = template_dict.get("body", "")
-                    bodies.insert(0, ("text/html", template_body))
-                    if args.use_template_subject:  # Use template subject if requested
-                        logger.info("Using subject from template.")
-                        fwd_subject = template_dict.get("subject", fwd_subject)
-                        logger.info(f"New subject: {fwd_subject}")
-                elif args.body_file:
-                    logger.info(f"Reading body from file: {args.body_file}")
-                    try:
-                        with open(os.path.expanduser(args.body_file), "r", encoding="utf-8") as f:
-                            file_body = f.read()
-                            logger.info(f"Read body from file: {file_body[:100]}...")
-                            new_body = ("text/html", file_body)
-                            bodies.insert(0, new_body)
-                    except Exception as e:
-                        logger.error(f"Failed to read body file '{args.body_file}': {e}")
-                elif args.body:
-                    new_body = ("text/html", args.body or "")
-                    bodies.insert(0, new_body)
-                else:
-                    logger.warning("No body, body file, or template provided for inline forward. Only original message will be included.")
-                
-
-                # inline_body = ""
-                # if bodies:
-                #     plain = next((b for c, b in bodies if c == "text/plain"), None)
-                #     html = next((b for c, b in bodies if c == "text/html"), None)
-                #     inline_body = plain or html or ""
-                # # own_body = args.template or args.body or ""
-                # forward_text = (
-                #     f"{args.body or ''}"
-                #     f"<br><br>---------- Forwarded message ---------<br>"
-                #     f"From: {sender}<br>"
-                #     f"Date: {date}<br>"
-                #     f"Subject: {subject}<br>"
-                #     f"To: {to}<br><br>"
-                #     f"{inline_body}"
-                # )
-                # print(fwd_subject)
-                # print()
-                # print(forward_text)
-                # print()
-
-                # Extract attachments unless disabled
-                if not args.no_attachments:
-                    for part in msg.walk():
-                        dispo = part.get_content_disposition()
-                        if dispo == "attachment":
-                            filename = part.get_filename()
-                            if not filename:
-                                continue
-                            filepath = os.path.join(tempfile.gettempdir(), filename)
-                            with open(os.path.join(tempfile.gettempdir(), filename), "wb") as f:
-                                f.write(part.get_payload(decode=True))
-                            attachments.append(filepath)
-                            logger.info(f"Temporarily saved attachment: {filepath}")
-                            # with tempfile.NamedTemporaryFile(delete=False, prefix="fwd_", suffix=f"_{filename}") as f:
-                            #     f.write(part.get_payload(decode=True))
-                            #     attachments.append(f.name)
-                            #     logger.info(f"Temporarily saved attachment: {f.name}")
-
-                # TODO: Send separately if requested
-
-                logger.info("Forwarding inline...")
-                built_msg = build_email_message(
-                    sender=args.sender,
-                    destination=to_addresses,
-                    subject=fwd_subject,
-                    body=bodies,
-                    body_images=args.body_image,
-                    attachments=attachments,
-                    cc=args.cc
-                )
-
-                all_recipients = to_addresses[:]
-                if args.cc:
-                    all_recipients.extend(args.cc)
-                if args.bcc:
-                    all_recipients.extend(args.bcc)
-
-                logger.info("Forwarding inline email...")
-                send_prepared_email(
-                    msg=built_msg,
-                    smtp_config=get_smtp_config(include_imap=True),
-                    sender=args.sender,
-                    all_recipients=all_recipients,
-                    save_sent=args.save_sent,
-                )
-
-                for path in attachments:
-                    try:
-                        os.remove(path)
-                    except Exception:
-                        logger.warning(f"Failed to remove temporary attachment file: {path}")
-
-            elif args.mode == "attachment":                
-                filepath = save_full_email(raw_msg, tempfile.gettempdir(), subject)
-                logger.info(f"Temporarily saved forwarded email as attachment: {filepath}")
-
-                if args.template and args.use_template_subject:
-                    template_dict = build_template_email_message(args.template, args.template_params)
-                    fwd_subject = template_dict.get("subject", fwd_subject)
-
-                built_msg = build_email_message(
-                    sender=args.sender,
-                    destination=args.destination,
-                    subject=fwd_subject,
-                    body=args.body,
-                    body_file=args.body_file,
-                    body_images=args.body_image,
-                    attachments=[filepath],
-                    cc=args.cc,
-                    template_name=args.template,
-                    template_params=args.template_params,
-                )
-
-                all_recipients = to_addresses[:]
-                if args.cc:
-                    all_recipients.extend(args.cc)
-                if args.bcc:
-                    all_recipients.extend(args.bcc)
-                
-                logger.info("Forwarding as attachment...")
-                send_prepared_email(
-                    msg=built_msg,
-                    smtp_config=get_smtp_config(include_imap=True),
-                    sender=args.sender,
-                    all_recipients=all_recipients,
-                    save_sent=args.save_sent,
-                )
-                
-                try:
-                    os.remove(filepath)
-                except Exception:
-                    logger.warning(f"Failed to remove temporary .eml file: {filepath}")
-
-            logger.info(f"Successfully forwarded message '{subject}' to {', '.join(to_addresses)}")
-
-            # Cleanup temp attachments
-            for path in attachments:
-                try:
-                    os.remove(path)
-                except Exception:
-                    pass
-
+            forward_email(
+                original_msg_record=msg_record,
+                sender=args.sender,
+                to_addresses=to_addresses,
+                subject=args.subject,
+                subject_prefix=args.subject_prefix,
+                body=args.body,
+                body_file=args.body_file,
+                body_images=args.body_image,
+                attachments=args.attach,
+                cc=args.cc,
+                bcc=args.bcc,
+                template_name=args.template,
+                template_params=args.template_params,
+                use_template_subject=args.use_template_subject,
+                mode=args.mode,
+                no_attachments=args.no_attachments,
+                save_sent=args.save_sent
+            )
         except Exception as e:
             logger.error(f"Failed to forward message '{msg_record.get('subject', '')}': {e}")
 
     logger.info("Forwarding completed.")
+
+
+def forward_email(
+    original_msg_record: Dict[str, Any],
+    sender: str,
+    to_addresses: List[str],
+    subject: Optional[str] = None,
+    subject_prefix: str = "Fwd:",
+    body: Optional[str] = None,
+    body_file: Optional[str] = None,
+    body_images: Optional[List[str]] = None,
+    attachments: Optional[List[str]] = None,
+    cc: Optional[List[str]] = None,
+    bcc: Optional[List[str]] = None,
+    template_name: Optional[str] = None,
+    template_params: Optional[Dict[str, Any]] = None,
+    use_template_subject: bool = False,
+    mode: str = "inline",
+    no_attachments: bool = False,
+    save_sent: bool = False,
+):
+    """Forward a single email message."""
+    msg_record = original_msg_record
+    if attachments is None:
+        attachments = []
+
+    raw_msg = msg_record["raw_msg"]
+    msg = message_from_bytes(raw_msg.as_bytes())
+
+    orig_date = msg_record.get("date", "")
+    orig_subject: str = msg_record.get("subject", "")
+    orig_sender = msg_record.get("from", "")
+    orig_to = msg_record.get("to", "")
+
+    if subject:
+        fwd_subject = subject
+    elif orig_subject.startswith(subject_prefix) or orig_subject.startswith("Fwd:"):
+        fwd_subject = orig_subject
+    else:
+        fwd_subject = f"{subject_prefix} {orig_subject}".strip()
+
+    # Prepare inline forward
+    if mode == "inline":
+        bodies = extract_body_from_msg(msg)
+        forward_text = ("text/html",
+            f"<br><br>---------- Forwarded message ---------<br>"
+            f"From: {orig_sender}<br>"
+            f"Date: {orig_date}<br>"
+            f"Subject: {orig_subject}<br>"
+            f"To: {', '.join(orig_to)}<br><br>"
+        )
+        bodies.insert(0, forward_text)
+
+        # Check if template is used
+        if template_name:
+            template_dict = build_template_email_message(template_name, template_params)
+            template_body = template_dict.get("body", "")
+            bodies.insert(0, ("text/html", template_body))
+            if use_template_subject:  # Use template subject if requested
+                logger.info("Using subject from template.")
+                fwd_subject = template_dict.get("subject", fwd_subject)
+                logger.info(f"New subject: {fwd_subject}")
+        elif body_file:
+            logger.info(f"Reading body from file: {body_file}")
+            try:
+                with open(os.path.expanduser(body_file), "r", encoding="utf-8") as f:
+                    file_body = f.read()
+                    logger.info(f"Read body from file: {file_body[:100]}...")
+                    new_body = ("text/html", file_body)
+                    bodies.insert(0, new_body)
+            except Exception as e:
+                logger.error(f"Failed to read body file '{body_file}': {e}")
+        elif body:
+            new_body = ("text/html", body or "")
+            bodies.insert(0, new_body)
+        else:
+            logger.warning("No body, body file, or template provided for inline forward. Only original message will be included.")
+        
+
+        # inline_body = ""
+        # if bodies:
+        #     plain = next((b for c, b in bodies if c == "text/plain"), None)
+        #     html = next((b for c, b in bodies if c == "text/html"), None)
+        #     inline_body = plain or html or ""
+        # # own_body = template or body or ""
+        # forward_text = (
+        #     f"{body or ''}"
+        #     f"<br><br>---------- Forwarded message ---------<br>"
+        #     f"From: {orig_sender}<br>"
+        #     f"Date: {orig_date}<br>"
+        #     f"Subject: {orig_subject}<br>"
+        #     f"To: {orig_to}<br><br>"
+        #     f"{inline_body}"
+        # )
+        # print(fwd_subject)
+        # print()
+        # print(forward_text)
+        # print()
+
+        # Extract attachments unless disabled
+        forwarded_attachments: List[str] = []
+        if not no_attachments:
+            for part in msg.walk():
+                dispo = part.get_content_disposition()
+                if dispo == "attachment":
+                    filename = part.get_filename()
+                    if not filename:
+                        continue
+                    filepath = os.path.join(tempfile.gettempdir(), filename)
+                    with open(os.path.join(tempfile.gettempdir(), filename), "wb") as f:
+                        f.write(part.get_payload(decode=True))
+                    forwarded_attachments.append(filepath)
+                    logger.info(f"Temporarily saved attachment: {filepath}")
+                    # with tempfile.NamedTemporaryFile(delete=False, prefix="fwd_", suffix=f"_{filename}") as f:
+                    #     f.write(part.get_payload(decode=True))
+                    #     attachments.append(f.name)
+                    #     logger.info(f"Temporarily saved attachment: {f.name}")
+
+        # TODO: Send separately if requested
+
+        logger.info("Forwarding inline...")
+        built_msg = build_email_message(
+            sender=sender,
+            destination=to_addresses,
+            subject=fwd_subject,
+            body=bodies,
+            body_images=body_images,
+            attachments=attachments + forwarded_attachments,
+            cc=cc
+        )
+
+        all_recipients = to_addresses[:]
+        if cc:
+            all_recipients.extend(cc)
+        if bcc:
+            all_recipients.extend(bcc)
+
+        logger.info("Forwarding inline email...")
+        send_prepared_email(
+            msg=built_msg,
+            smtp_config=get_smtp_config(include_imap=True),
+            sender=sender,
+            all_recipients=all_recipients,
+            save_sent=save_sent,
+        )
+
+        for path in forwarded_attachments:
+            try:
+                os.remove(path)
+            except Exception:
+                logger.warning(f"Failed to remove temporary attachment file: {path}")
+
+    elif mode == "attachment":                
+        filepath = save_full_email(raw_msg, tempfile.gettempdir(), orig_subject)
+        logger.info(f"Temporarily saved forwarded email as attachment: {filepath}")
+
+        if template_name and use_template_subject:
+            template_dict = build_template_email_message(template_name, template_params)
+            fwd_subject = template_dict.get("subject", fwd_subject)
+
+        built_msg = build_email_message(
+            sender=sender,
+            destination=to_addresses,  # destination
+            subject=fwd_subject,
+            body=body,
+            body_file=body_file,
+            body_images=body_images,
+            attachments=[filepath],
+            cc=cc,
+            template_name=template_name,
+            template_params=template_params,
+        )
+
+        all_recipients = to_addresses[:]
+        if cc:
+            all_recipients.extend(cc)
+        if bcc:
+            all_recipients.extend(bcc)
+        
+        logger.info("Forwarding as attachment...")
+        send_prepared_email(
+            msg=built_msg,
+            smtp_config=get_smtp_config(include_imap=True),
+            sender=sender,
+            all_recipients=all_recipients,
+            save_sent=save_sent,
+        )
+        
+        try:
+            os.remove(filepath)
+        except Exception:
+            logger.warning(f"Failed to remove temporary .eml file: {filepath}")
+
+    logger.info(f"Successfully forwarded message '{fwd_subject}' to {', '.join(to_addresses)}")
