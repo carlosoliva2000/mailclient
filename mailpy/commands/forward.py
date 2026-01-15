@@ -7,11 +7,11 @@ import tempfile
 from typing import Any, Dict, List, Optional
 from email import message_from_bytes
 
-from log import get_logger
-from config import get_mail_config, get_smtp_config, set_env_vars_from_args
-from commands.read import read_emails, save_full_email
-from commands.send import build_email_message, send_prepared_email, build_template_email_message
-from mail_utils import save_to_sent_folder, extract_body_from_msg, expand_all_recipients
+from mailpy.log import get_logger
+from mailpy.config import get_mail_config, get_smtp_config, set_env_vars_from_args
+from mailpy.commands.read import read_emails, save_full_email
+from mailpy.commands.send import build_email_message, send_prepared_email, build_template_email_message
+from mailpy.mail_utils import save_to_sent_folder, extract_body_from_msg, expand_all_recipients
 
 logger = get_logger()
 

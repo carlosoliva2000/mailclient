@@ -14,12 +14,12 @@ from mailbox import Message
 from typing import Any, Dict, List, Optional, Union, Tuple
 from datetime import datetime, timezone
 from email.utils import getaddresses
-
 from email import message_from_bytes
-from log import get_logger
-from config import get_mail_config, set_env_vars_from_args
-from connection import connect_mail
-from mail_utils import decode_mime_words, parse_datetime_flexible, extract_body_from_msg
+
+from mailpy.log import get_logger
+from mailpy.config import get_mail_config, set_env_vars_from_args
+from mailpy.connection import connect_mail
+from mailpy.mail_utils import decode_mime_words, parse_datetime_flexible, extract_body_from_msg
 
 
 logger = get_logger()

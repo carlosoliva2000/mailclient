@@ -10,7 +10,7 @@ from email.message import Message
 from email.utils import parsedate_tz, mktime_tz
 from email.header import decode_header
 
-from log import get_logger
+from mailpy.log import get_logger
 
 
 logger = get_logger()

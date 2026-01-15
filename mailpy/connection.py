@@ -5,7 +5,8 @@ import poplib
 import socket
 
 from typing import Any, Dict, Tuple, Union
-from log import get_logger
+
+from mailpy.log import get_logger
 # from mailclient.log import get_logger
 
 

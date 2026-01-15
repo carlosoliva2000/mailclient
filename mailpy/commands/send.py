@@ -15,11 +15,11 @@ from email.mime.base import MIMEBase
 from email.mime.image import MIMEImage
 from email.mime.message import MIMEMessage
 
-from email_templates import get_template
-from log import get_logger
-from config import get_smtp_config, set_env_vars_from_args
-from connection import connect_smtp, connect_mail
-from mail_utils import save_to_sent_folder, expand_all_recipients
+from mailpy.email_templates import get_template
+from mailpy.log import get_logger
+from mailpy.config import get_smtp_config, set_env_vars_from_args
+from mailpy.connection import connect_smtp, connect_mail
+from mailpy.mail_utils import save_to_sent_folder, expand_all_recipients
 
 
 logger = get_logger()

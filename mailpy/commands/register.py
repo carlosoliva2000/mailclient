@@ -3,7 +3,7 @@ import argparse
 
 from typing import Optional, Dict, Tuple
 
-from log import get_logger
+from mailpy.log import get_logger
 
 
 logger = get_logger()

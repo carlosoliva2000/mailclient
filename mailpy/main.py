@@ -1,9 +1,7 @@
 import argparse
 import sys
-from commands import send, read, reply, forward, register, passwd, delete
-from log import get_logger, setup_global_logger
-# from mailclient.commands import send, read, reply, forward
-# from mailclient.log import get_logger
+from mailpy.commands import send, read, reply, forward, register, passwd, delete
+from mailpy.log import get_logger, setup_global_logger
 
 # logger = get_logger()
 
