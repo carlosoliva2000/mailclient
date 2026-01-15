@@ -179,6 +179,11 @@ def expand_addresses(
     expanded_addresses = []
 
     for addr in addresses:
+        if '*' not in addr and '?' not in addr:
+            # No regex characters, add directly
+            expanded_addresses.append(addr)
+            continue
+
         try:
             response = requests.get(
                 f"http://{server}:{port}/users?filter_by={addr}"
