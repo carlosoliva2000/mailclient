@@ -26,7 +26,7 @@ def register_arguments(parser: argparse.ArgumentParser):
     parser.add_argument(
         "--port",
         type=int,
-        default=9999,
+        default=24421,
         help="API server port.",
     )
 

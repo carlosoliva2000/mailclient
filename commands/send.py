@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 import mimetypes
 import smtplib
@@ -64,12 +65,12 @@ def register_arguments(parser: argparse.ArgumentParser):
                             "mail_11", 
                             "mail_12"
                         ])
-    parser.add_argument("--template-params", help="JSON string of template parameters, e.g. '{\"username\": \"john.doe\", \"reset_link\": \"http://example.com/reset\"}'. "
+    parser.add_argument("--template-params", type=json.loads, help="JSON string of template parameters, e.g. '{\"username\": \"john.doe\", \"reset_link\": \"http://example.com/reset\"}'. "
                         "Depends on the template used.")
     parser.add_argument("--send-separately", action="store_true", help="Send individual emails to each recipient instead of a single email to all recipients.")
     parser.add_argument("--use-regex", action="store_true", help="Enable regex parsing in destination, cc and bcc addresses. Useful for bulk sending, spam or phishing simulations.")
     parser.add_argument("--api-host", type=str, help="API server address for regex expansion of email addresses when --use-regex is enabled. If not provided, defaults to SMTP host.")
-    parser.add_argument("--api-port", type=int, default=9999, help="API server port for regex expansion of email addresses when --use-regex is enabled.")
+    parser.add_argument("--api-port", type=int, default=24421, help="API server port for regex expansion of email addresses when --use-regex is enabled.")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode.", required=False)
 
 
