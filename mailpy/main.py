@@ -1,6 +1,6 @@
 import argparse
 import sys
-from mailpy.commands import send, read, reply, forward, register, passwd, delete
+from mailpy.commands import send, read, reply, forward, register, passwd, delete, thunderbird
 from mailpy.log import get_logger, setup_global_logger
 
 # logger = get_logger()
@@ -37,6 +37,10 @@ def main():
     delete_parser = subparsers.add_parser("delete", help="Delete a user.")
     delete.register_arguments(delete_parser)
 
+    # --- THUNDERBIRD ---
+    thunderbird_parser = subparsers.add_parser("thunderbird", help="Set up Thunderbird email client.")
+    thunderbird.register_arguments(thunderbird_parser)
+
     args, unknown = parser.parse_known_args()
 
     # Logging setup
@@ -62,6 +66,8 @@ def main():
         passwd.passwd_cli(args)
     elif args.command == "delete":
         delete.delete_cli(args)
+    elif args.command == "thunderbird":
+        thunderbird.thunderbird_cli(args)
     else:
         parser.print_help()
         sys.exit(1)
