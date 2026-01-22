@@ -16,18 +16,28 @@ from mailpy.log import get_logger
 logger = get_logger()
 
 def decode_mime_words(value: str) -> str:
-    """Decode MIME encoded-words (e.g. =?utf-8?q?...?=)"""
+    """Decode MIME encoded-words (e.g. =?utf-8?q?...?=) and tolerate malformed 8-bit headers."""
     if not value:
         return ""
     
-    decoded = []
+    decoded_parts = []
+
     for part, enc in decode_header(value):
         if isinstance(part, bytes):
-            decoded.append(part.decode(enc or "utf-8", errors="ignore"))
+            # decoded_parts.append(part.decode(enc or "utf-8", errors="ignore"))
+            if not enc or enc.lower() in ("unknown-8bit", "x-unknown"):
+                logger.debug(f"Header with unknown 8-bit encoding detected: {value}")
+                enc = "utf-8"
+            
+            try:
+                decoded_parts.append(part.decode(enc, errors="replace"))
+            except LookupError:
+                logger.debug(f"Unknown codec '{enc}' in header, falling back to utf-8: {value}")
+                decoded_parts.append(part.decode("utf-8", errors="replace"))
         else:
-            decoded.append(part)
+            decoded_parts.append(part)
     
-    return "".join(decoded)
+    return "".join(decoded_parts)
 
 
 def list_mailboxes(client: Union[imaplib.IMAP4, imaplib.IMAP4_SSL]) -> List[Dict[str, str]]:
