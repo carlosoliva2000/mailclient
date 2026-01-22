@@ -113,15 +113,15 @@ def filter_by_regex(subject: str, body: Union[str, List[Tuple[str, str]]], sende
     """
     checks = []
     if subject_re:
-        checks.append(bool(re.search(subject_re, subject or "", re.IGNORECASE)))
+        checks.append(bool(re.search(subject_re, subject or "", re.DOTALL | re.IGNORECASE)))
     if body_re:
         if isinstance(body, list):
             body_text = " ".join([text.strip() for _, text in body])
-            checks.append(bool(re.search(body_re, body_text or "", re.IGNORECASE)))
+            checks.append(bool(re.search(body_re, body_text or "", re.DOTALL | re.IGNORECASE)))
         else:
-            checks.append(bool(re.search(body_re, body or "", re.IGNORECASE)))
+            checks.append(bool(re.search(body_re, body or "", re.DOTALL | re.IGNORECASE)))
     if from_re:
-        checks.append(bool(re.search(from_re, sender or "", re.IGNORECASE)))
+        checks.append(bool(re.search(from_re, sender or "", re.DOTALL | re.IGNORECASE)))
 
     if not checks:
         return True
