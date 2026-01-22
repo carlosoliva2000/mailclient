@@ -707,6 +707,7 @@ def read_emails(
     # sys.exit(0)
 
     for record in selected:
+        logger.info(f"Processing email: {record}")
         action_result = perform_actions_on_message(record, actions or [], download_dir, execute_path, action_mode)
         results_all.append({**record, "actions": action_result.get("performed")})
 
