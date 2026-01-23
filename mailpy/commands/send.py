@@ -71,7 +71,6 @@ def register_arguments(parser: argparse.ArgumentParser):
     parser.add_argument("--use-regex", action="store_true", help="Enable regex parsing in destination, cc and bcc addresses. Useful for bulk sending, spam or phishing simulations.")
     parser.add_argument("--api-host", type=str, help="API server address for regex expansion of email addresses when --use-regex is enabled. If not provided, defaults to SMTP host.")
     parser.add_argument("--api-port", type=int, default=24421, help="API server port for regex expansion of email addresses when --use-regex is enabled.")
-    parser.add_argument("--debug", action="store_true", help="Enable debug mode.", required=False)
 
 
 def send_email_cli(args: argparse.Namespace):

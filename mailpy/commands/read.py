@@ -65,7 +65,6 @@ def register_arguments(parser: argparse.ArgumentParser):
 
     parser.add_argument("--download-dir", help="Directory for attachments")
     parser.add_argument("--cwd", help="Change working directory before executing files.")
-    parser.add_argument("--debug", action="store_true", default=False, help="Enable debug logging.")
 
 
 def read_email_cli(args: argparse.Namespace):
