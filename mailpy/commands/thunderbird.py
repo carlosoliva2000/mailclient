@@ -419,6 +419,7 @@ def setup_thunderbird(
             _input_keyboard_sequence(sequence, args)
 
             # Check for certificate warning
+            time.sleep(5)  # Wait for potential certificate warning
             sequence = []
 
             proc = subprocess.run(['wmctrl', '-l'], capture_output=True, text=True)
