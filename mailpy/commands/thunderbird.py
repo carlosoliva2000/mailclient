@@ -227,21 +227,25 @@ def _check_thunderbird_running() -> bool:
     return len(thunderbird_windows) > 0
 
 
-def _focus_thunderbird_window():
+def _focus_thunderbird_window(security_exception: bool = False) -> bool:
     """Focus the Thunderbird window using wmctrl."""
     proc = subprocess.run(['wmctrl', '-lx'], capture_output=True, text=True)
-    thunderbird_windows = [line for line in proc.stdout.splitlines() if 'Mail.thunderbird' in line]
+    check_for = 'excepción de seguridad' if security_exception else 'Mail.thunderbird'
+    thunderbird_windows = [line for line in proc.stdout.splitlines() if check_for in line]
     if thunderbird_windows:
+        logger.debug(f"{'Certificate warning' if security_exception else 'Thunderbird'} window detected. Focusing it.")
+        
         window_id = thunderbird_windows[0].split()[0]
         subprocess.run(['wmctrl', '-iR', window_id])
-        logger.debug("Focused Thunderbird window with wmctrl")
+        logger.debug("Focused Thunderbird window with wmctrl.")
 
         subprocess.run([
             "xdotool", "windowactivate", "--sync", window_id
         ])
-        logger.debug("Focused Thunderbird window with xdotool")
-
-
+        logger.debug("Focused Thunderbird window with xdotool.")
+        time.sleep(1)  # Give some time for the window to focus
+    
+    return bool(thunderbird_windows)
 
 
 def setup_thunderbird(
@@ -276,28 +280,8 @@ def setup_thunderbird(
                 logger.error(f"Failed to setup Thunderbird: {e}")
                 raise
 
-            time.sleep(15)  # Min time to wait
-            
-            # # Try to kill and reopen it (avoid issues with new instances)
-            # try:
-            #     subprocess.Popen(["pkill", "thunderbird"])
-            #     logger.info("Thunderbird killed successfully.")
-            # except Exception as e:
-            #     logger.error(f"Failed to killed Thunderbird: {e}")
-            #     raise
-            # time.sleep(5)  # Min time to wait
+            time.sleep(2)  # Min time to wait
 
-            # try:
-            #     subprocess.Popen([thunderbird_path])
-            #     logger.info("Thunderbird setup launched successfully.")
-            # except Exception as e:
-            #     logger.error(f"Failed to setup Thunderbird: {e}")
-            #     raise
-            # time.sleep(10)  # Min time to wait
-
-            # Wait for Thunderbird to launch
-            # max_retries = 10
-            # retries = 0
             while not _check_thunderbird_running():  #  and retries < max_retries:
                 logger.debug("Waiting for Thunderbird to launch...")
                 # retries += 1
@@ -310,8 +294,8 @@ def setup_thunderbird(
                 # "--typing-interval": 0.5,
                 "--press-interval": 0.1
             }
-            # _focus_thunderbird_window()
-            time.sleep(2)
+            time.sleep(1)
+            _focus_thunderbird_window()
 
             sequence = []
 
@@ -324,7 +308,7 @@ def setup_thunderbird(
 
             _input_keyboard_sequence(sequence, args)
             time.sleep(2)  # Wait for the Add Account window to open
-            # _focus_thunderbird_window()
+            _focus_thunderbird_window()
 
             sequence = []
 
@@ -418,14 +402,13 @@ def setup_thunderbird(
             sequence.extend(done_sequence)
             _input_keyboard_sequence(sequence, args)
 
+
             # Check for certificate warning
-            time.sleep(5)  # Wait for potential certificate warning
+            time.sleep(2)  # Wait for potential certificate warning
+            is_certificate_window = _focus_thunderbird_window(security_exception=True)
             sequence = []
 
-            proc = subprocess.run(['wmctrl', '-l'], capture_output=True, text=True)
-            gedit_windows_after = [line for line in proc.stdout.splitlines() if 'excepción de seguridad' in line]
-            if gedit_windows_after:
-                logger.debug("Certificate warning window detected.")
+            if is_certificate_window:
                 certificate_warning_sequence = [
                     'S,1',
                     'K,Tab,4',
