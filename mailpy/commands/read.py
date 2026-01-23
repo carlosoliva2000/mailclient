@@ -64,7 +64,7 @@ def register_arguments(parser: argparse.ArgumentParser):
     )
 
     parser.add_argument("--download-dir", help="Directory for attachments")
-    parser.add_argument("--execute-path", help="Directory to move and execute files")
+    parser.add_argument("--cwd", help="Change working directory before executing files.")
     parser.add_argument("--debug", action="store_true", default=False, help="Enable debug logging.")
 
 
@@ -94,7 +94,7 @@ def read_email_cli(args: argparse.Namespace):
         actions=args.action,
         action_mode=args.action_mode,
         download_dir=args.download_dir,
-        execute_path=args.execute_path,
+        cwd=args.cwd,
         pop3_delete=args.pop3_delete
     )
 
@@ -481,7 +481,7 @@ def perform_actions_on_message(
     msg_record: Dict[str, Any],
     actions: List[str],
     download_dir: str,
-    execute_path: Optional[str] = None,
+    cwd: Optional[str] = None,
     action_mode: str = "all"
 ) -> Dict[str, Any]:
     """
@@ -518,7 +518,7 @@ def perform_actions_on_message(
                 result["performed"].append({"saved_mail": path})
             elif act == "exec":
                 saved = download_attachment(msg, download_dir)
-                execute_files(saved, execute_path)
+                execute_files(saved, cwd)
                 result["performed"].append({"executed": saved})
             elif act == "open":
                 saved = download_attachment(msg, download_dir)
@@ -608,25 +608,31 @@ def save_full_email(msg: Message, download_dir: str, subject: str) -> str:
         raise
 
 
-def execute_files(filepaths: List[str], execute_path: Optional[str] = None):
+def execute_files(filepaths: List[str], cwd: Optional[str] = None):
     """Run each file in list as a subprocess (be cautious)."""
     for p in filepaths:
         p = os.path.abspath(p)
         try:
-            if execute_path:
-                dest_path = os.path.join(execute_path, os.path.basename(p))
-                os.makedirs(execute_path, exist_ok=True)
-                os.rename(p, dest_path)
-                p = dest_path
-                logger.info(f"Moved file to execution path: {dest_path}.")
+            if cwd:
+                execute_path = os.path.abspath(os.path.expanduser(cwd))
+                logger.info(f"Executing in specified cwd: {execute_path}.")
+            else:
+                execute_path = None
             
             if not os.access(p, os.X_OK):
                 logger.info(f"Setting execute permissions for: {p}.")
                 os.chmod(p, 0o755)
             
             logger.info(f"Executing {p}.")
-            subprocess.run([p], check=False)
-            logger.info(f"Execution completed for {p}.")
+            proc = subprocess.Popen(
+                ["/bin/bash", "-c", p],
+                cwd=execute_path,
+                env=os.environ.copy(),
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True
+            )
+            logger.info(f"Execution started for {p} with PID {proc.pid} and detached.")
         except Exception as e:
             logger.error(f"Execution failed for {p}: {e}")
 
@@ -663,7 +669,7 @@ def read_emails(
     actions: Optional[List[str]] = None,
     action_mode: str = "all",
     download_dir: Optional[str] = None,
-    execute_path: Optional[str] = None,
+    cwd: Optional[str] = None,
     pop3_delete: bool = False
 ) -> List[Dict[str, Any]]:
     """Read emails from the mail server and process them.
@@ -708,7 +714,7 @@ def read_emails(
 
     for record in selected:
         logger.info(f"Processing email: {record}")
-        action_result = perform_actions_on_message(record, actions or [], download_dir, execute_path, action_mode)
+        action_result = perform_actions_on_message(record, actions or [], download_dir, cwd, action_mode)
         results_all.append({**record, "actions": action_result.get("performed")})
 
         # POP3 deletion if requested

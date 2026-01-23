@@ -95,7 +95,7 @@ def register_arguments(parser: argparse.ArgumentParser):
         help="Whether to execute all matching actions or one random: all, random (default: all)."
     )
     parser.add_argument("--download-dir", help="Directory for attachments")
-    parser.add_argument("--execute-path", help="Directory to move and execute files")
+    parser.add_argument("--cwd", help="Change working directory before executing files.")
 
     # Reply-specific options
     # parser.add_argument("--include-original-attachments", action="store_true", help="Include the attachments from the original message in the reply.")
@@ -127,6 +127,11 @@ def reply_email_cli(args: argparse.Namespace):
         body_regex=args.body_regex,
         from_regex=args.from_regex,
         regex_mode=args.regex_mode,
+        actions=args.action,
+        action_mode=args.action_mode,
+        download_dir=args.download_dir,
+        cwd=args.cwd,
+        pop3_delete=args.pop3_delete
     )
 
     if not messages:

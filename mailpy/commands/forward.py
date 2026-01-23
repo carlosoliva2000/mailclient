@@ -92,7 +92,7 @@ def register_arguments(parser: argparse.ArgumentParser):
         help="Whether to execute all matching actions or one random: all, random (default: all)."
     )
     parser.add_argument("--download-dir", help="Directory for attachments")
-    parser.add_argument("--execute-path", help="Directory to move and execute files")
+    parser.add_argument("--cwd", help="Change working directory before executing files.")
 
     # Forward-specific options
     parser.add_argument(
@@ -143,7 +143,7 @@ def forward_email_cli(args: argparse.Namespace):
         actions=args.action,
         action_mode=args.action_mode,
         download_dir=args.download_dir,
-        execute_path=args.execute_path,
+        cwd=args.cwd,
         pop3_delete=args.pop3_delete
     )
 
