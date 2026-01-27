@@ -116,6 +116,13 @@ def register_arguments(parser: argparse.ArgumentParser):
 
     # Conditionals
     parser.add_argument("--else-action", nargs="+", choices=["navigate", "download-attachments", "download-mail", "exec", "open"], help="Actions to perform if no emails matched filters.")
+    parser.add_argument("--else-subject", help="Subject to use if no emails matched filters. If not provided, --subject is used.")
+    parser.add_argument("--else-body", help="Body to use if no emails matched filters. If not provided, --body, --body-file or --template is used.")
+    parser.add_argument("--else-body-file", help="Body file to use if no emails matched filters. If not provided, --body, --body-file or --template is used.")
+    parser.add_argument("--else-attach", action="append", help="Attachments to use if no emails matched filters. You can specify this argument as many attachments as needed.")
+    parser.add_argument("--else-to", action="append", help="Destination addresses to use if no emails matched filters. You can specify this argument as many addresses as needed.")
+    parser.add_argument("--else-cc", action="append", help="CC addresses to use if no emails matched filters. You can specify this argument as many addresses as needed.")
+    parser.add_argument("--else-bcc", action="append", help="BCC addresses to use if no emails matched filters. You can specify this argument as many addresses as needed.")
 
 
 def forward_email_cli(args: argparse.Namespace):
@@ -152,11 +159,12 @@ def forward_email_cli(args: argparse.Namespace):
         pop3_delete=args.pop3_delete,
         open_cmd=args.open_cmd,
         exec_cmd=args.exec_cmd,
+        include_unmatched=any([args.else_action, args.else_subject, args.else_body, args.else_body_file, args.else_attach, args.else_to, args.else_cc, args.else_bcc]),
         else_action=args.else_action
     )
 
     if not messages:
-        logger.info("No messages matched filters. Nothing to forward.")
+        logger.info("No messages found. Nothing to forward.")
         return
     
     # Get recipients if regex is used
@@ -193,6 +201,25 @@ def forward_email_cli(args: argparse.Namespace):
 
     for msg_record in messages:
         print(f"Msg record: {msg_record}")
+
+        # Determine if we are using else parameters
+        if msg_record["matched"]:
+            subject = args.subject
+            body = args.body
+            body_file = args.body_file
+            attachments = args.attach
+            cc = args.cc
+            bcc = args.bcc
+        else:
+            logger.info(f"Using else parameters for unmatched message '{msg_record.get('subject', '')}'.")
+            subject = args.else_subject or args.subject
+            body = args.else_body or args.body
+            body_file = args.else_body_file or args.body_file
+            attachments = args.else_attach or args.attach
+            cc = args.else_cc or args.cc
+            bcc = args.else_bcc or args.bcc
+            to_addresses = args.else_to or args.destination
+
         # Check if send separately
         if args.send_separately:
             for recipient in to_addresses:
@@ -201,14 +228,14 @@ def forward_email_cli(args: argparse.Namespace):
                         original_msg_record=msg_record,
                         sender=args.sender,
                         to_addresses=[recipient],
-                        subject=args.subject,
+                        subject=subject,
                         subject_prefix=args.subject_prefix,
-                        body=args.body,
-                        body_file=args.body_file,
+                        body=body,
+                        body_file=body_file,
                         body_images=args.body_image,
-                        attachments=args.attach,
-                        cc=args.cc,
-                        bcc=args.bcc,
+                        attachments=attachments,
+                        cc=cc,
+                        bcc=bcc,
                         template_name=args.template,
                         template_params=args.template_params,
                         use_template_subject=args.use_template_subject,
@@ -224,14 +251,14 @@ def forward_email_cli(args: argparse.Namespace):
                     original_msg_record=msg_record,
                     sender=args.sender,
                     to_addresses=to_addresses,
-                    subject=args.subject,
+                    subject=subject,
                     subject_prefix=args.subject_prefix,
-                    body=args.body,
-                    body_file=args.body_file,
+                    body=body,
+                    body_file=body_file,
                     body_images=args.body_image,
-                    attachments=args.attach,
-                    cc=args.cc,
-                    bcc=args.bcc,
+                    attachments=attachments,
+                    cc=cc,
+                    bcc=bcc,
                     template_name=args.template,
                     template_params=args.template_params,
                     use_template_subject=args.use_template_subject,

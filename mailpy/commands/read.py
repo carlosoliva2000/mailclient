@@ -103,6 +103,7 @@ def read_email_cli(args: argparse.Namespace):
         pop3_delete=args.pop3_delete,
         open_cmd=args.open_cmd,
         exec_cmd=args.exec_cmd,
+        include_unmatched=bool(args.else_action),
         else_action=args.else_action
     )
 
@@ -724,7 +725,8 @@ def read_emails(
     pop3_delete: bool = False,
     open_cmd: str = "auto",
     exec_cmd: str = "auto",
-    else_action: Optional[List[str]] = None
+    include_unmatched: bool = False,
+    else_action: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
     """Read emails from the mail server and process them.
     Returns list of processed message dicts (with performed action info)."""
@@ -740,11 +742,6 @@ def read_emails(
     if not client and protocol != "api":
         logger.error("Failed to connect to mail server.")
         sys.exit(1)
-
-    if else_action:
-        include_unmatched = True
-    else:
-        include_unmatched = False
 
     selected = select_and_fetch_messages(
         client,
