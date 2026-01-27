@@ -312,7 +312,7 @@ def fetch_message_ids_imap(
     
     # Sort order
     # logger.info(f"IDS before sorting: {[id.decode() for id in ids]}")
-    ids = list(reversed(ids)) if sort_criteria == "oldest" else ids
+    ids = list(reversed(ids)) if sort_criteria == "newest" else ids
     # logger.info(f"IDS after sorting ({sort_criteria}): {[id.decode() for id in ids]}")
     
     if not (limit < 0 or limit > len(ids)):
