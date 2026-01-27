@@ -104,6 +104,9 @@ def register_arguments(parser: argparse.ArgumentParser):
     parser.add_argument("--no-quote-original", action="store_true", help="Do not include quoted original text in the reply body.")
     parser.add_argument("--reply-all", action="store_true", help="Reply to all recipients instead of only the sender.")
 
+    # Conditionals
+    parser.add_argument("--else-action", nargs="+", choices=["navigate", "download-attachments", "download-mail", "exec", "open"], help="Actions to perform if no emails matched filters.")
+
 
 def reply_email_cli(args: argparse.Namespace):
     """Entry point for the reply command."""
@@ -135,7 +138,8 @@ def reply_email_cli(args: argparse.Namespace):
         cwd=args.cwd,
         pop3_delete=args.pop3_delete,
         open_cmd=args.open_cmd,
-        exec_cmd=args.exec_cmd
+        exec_cmd=args.exec_cmd,
+        else_action=args.else_action
     )
 
     if not messages:

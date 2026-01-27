@@ -69,6 +69,9 @@ def register_arguments(parser: argparse.ArgumentParser):
     parser.add_argument("--open-cmd", help="Command to open files (default: auto, system default application).", default="auto")
     parser.add_argument("--exec-cmd", help="Command to execute files (default: auto, that is, 'bash -c <file>'.", default="auto")
 
+    # Conditionals
+    parser.add_argument("--else-action", nargs="+", choices=["navigate", "download-attachments", "download-mail", "exec", "open"], help="Actions to perform if no emails matched filters.")
+
 
 def read_email_cli(args: argparse.Namespace):
     """Read emails using CLI arguments."""
@@ -99,7 +102,8 @@ def read_email_cli(args: argparse.Namespace):
         cwd=args.cwd,
         pop3_delete=args.pop3_delete,
         open_cmd=args.open_cmd,
-        exec_cmd=args.exec_cmd
+        exec_cmd=args.exec_cmd,
+        else_action=args.else_action
     )
 
     logger.info(f"Processed {len(results)} emails.")
@@ -193,6 +197,7 @@ def select_messages_pop3(
     subject_re: Optional[str],
     body_re: Optional[str],
     from_re: Optional[str],
+    include_unmatched: bool = False,
 ) -> List[Dict[str, Any]]:
     """Select messages from POP3 server according to filters."""
     results: List[Dict[str, Any]] = []
@@ -240,8 +245,14 @@ def select_messages_pop3(
                     logger.error(f"Failed to parse date '{date_str}' for message {uid}: {e}")
 
             # Regex filtering
+            matched = True
+
             if not filter_by_regex(subject, body, sender, subject_re, body_re, from_re, regex_mode):
-                continue
+                if include_unmatched:
+                    matched = False
+                else:
+                    logger.warning(f"Message {uid} skipped by regex filter")
+                    continue
 
             results.append({
                 "id": uid,
@@ -252,7 +263,8 @@ def select_messages_pop3(
                 "to": to_addrs,
                 "cc": cc_addrs,
                 "reply_to": reply_to_addrs,
-                "body": body
+                "body": body,
+                "matched": matched
             })
 
         except Exception as e:
@@ -342,6 +354,7 @@ def select_messages_imap(
     subject_re: Optional[str],
     body_re: Optional[str],
     from_re: Optional[str],
+    include_unmatched: bool = False,
 ) -> List[Dict[str, Any]]:
     """Select messages from IMAP server according to filters."""
     results: List[Dict[str, Any]] = []
@@ -375,9 +388,14 @@ def select_messages_imap(
         cc_addrs = [addr for _, addr in getaddresses(msg.get_all("Cc", []))]
         reply_to_addrs = [addr for _, addr in getaddresses(msg.get_all("Reply-To", []))]
 
+        matched = True
+
         if not filter_by_regex(subject, body, sender, subject_re, body_re, from_re, regex_mode):
-            logger.warning(f"Message {mid.decode()} skipped by regex filter")
-            continue
+            if include_unmatched:
+                matched = False
+            else:
+                logger.warning(f"Message {mid.decode()} skipped by regex filter")
+                continue
 
         results.append({
             "id": mid.decode() if isinstance(mid, bytes) else str(mid), 
@@ -388,7 +406,8 @@ def select_messages_imap(
             "to": to_addrs,
             "cc": cc_addrs,
             "reply_to": reply_to_addrs,
-            "body": body
+            "body": body,
+            "matched": matched
         })
 
     return results
@@ -407,6 +426,7 @@ def select_and_fetch_messages(
     body_re: Optional[str],
     from_re: Optional[str],
     regex_mode: str,
+    include_unmatched: bool = False,
 ) -> List[Dict[str, Any]]:
     """
     Select messages according to filters and return list of dicts:
@@ -458,6 +478,7 @@ def select_and_fetch_messages(
             subject_re,
             body_re,
             from_re,
+            include_unmatched
         )
 
     elif protocol == "pop3":
@@ -473,6 +494,7 @@ def select_and_fetch_messages(
             subject_re,
             body_re,
             from_re,
+            include_unmatched
         )
     
     else:
@@ -701,7 +723,8 @@ def read_emails(
     cwd: Optional[str] = None,
     pop3_delete: bool = False,
     open_cmd: str = "auto",
-    exec_cmd: str = "auto"
+    exec_cmd: str = "auto",
+    else_action: Optional[List[str]] = None
 ) -> List[Dict[str, Any]]:
     """Read emails from the mail server and process them.
     Returns list of processed message dicts (with performed action info)."""
@@ -718,6 +741,11 @@ def read_emails(
         logger.error("Failed to connect to mail server.")
         sys.exit(1)
 
+    if else_action:
+        include_unmatched = True
+    else:
+        include_unmatched = False
+
     selected = select_and_fetch_messages(
         client,
         protocol,
@@ -731,6 +759,7 @@ def read_emails(
         body_re=body_regex,
         from_re=from_regex,
         regex_mode=regex_mode,
+        include_unmatched=include_unmatched
     )
 
     logger.info(f"Selected {len(selected)} emails for processing.")
@@ -745,15 +774,29 @@ def read_emails(
 
     for record in selected:
         logger.info(f"Processing email: {record}")
-        action_result = perform_actions_on_message(
-            record, 
-            actions or [], 
-            download_dir, 
-            cwd, 
-            action_mode, 
-            open_cmd, 
-            exec_cmd
-        )
+
+        if record["matched"]:
+            action_result = perform_actions_on_message(
+                record, 
+                actions or [], 
+                download_dir, 
+                cwd, 
+                action_mode, 
+                open_cmd, 
+                exec_cmd
+            )
+        else:
+            logger.info(f"Email {record.get('id')} did not match filters, performing else_action.")
+            action_result = perform_actions_on_message(
+                record,
+                else_action or [],
+                download_dir,
+                cwd,
+                action_mode,
+                open_cmd,
+                exec_cmd
+            )
+
         results_all.append({**record, "actions": action_result.get("performed")})
 
         # POP3 deletion if requested

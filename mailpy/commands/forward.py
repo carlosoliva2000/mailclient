@@ -114,6 +114,9 @@ def register_arguments(parser: argparse.ArgumentParser):
         help="Do NOT include the original attachments when forwarding inline."
     )
 
+    # Conditionals
+    parser.add_argument("--else-action", nargs="+", choices=["navigate", "download-attachments", "download-mail", "exec", "open"], help="Actions to perform if no emails matched filters.")
+
 
 def forward_email_cli(args: argparse.Namespace):
     """Entry point for the forward command."""
@@ -148,7 +151,8 @@ def forward_email_cli(args: argparse.Namespace):
         cwd=args.cwd,
         pop3_delete=args.pop3_delete,
         open_cmd=args.open_cmd,
-        exec_cmd=args.exec_cmd
+        exec_cmd=args.exec_cmd,
+        else_action=args.else_action
     )
 
     if not messages:
