@@ -9,6 +9,7 @@ import sys
 import re
 import time
 import webbrowser
+import shlex
 
 from mailbox import Message
 from typing import Any, Dict, List, Optional, Union, Tuple
@@ -65,6 +66,8 @@ def register_arguments(parser: argparse.ArgumentParser):
 
     parser.add_argument("--download-dir", help="Directory for attachments")
     parser.add_argument("--cwd", help="Change working directory before executing files.")
+    parser.add_argument("--open-cmd", help="Command to open files (default: auto, system default application).", default="auto")
+    parser.add_argument("--exec-cmd", help="Command to execute files (default: auto, that is, 'bash -c <file>'.", default="auto")
 
 
 def read_email_cli(args: argparse.Namespace):
@@ -94,7 +97,9 @@ def read_email_cli(args: argparse.Namespace):
         action_mode=args.action_mode,
         download_dir=args.download_dir,
         cwd=args.cwd,
-        pop3_delete=args.pop3_delete
+        pop3_delete=args.pop3_delete,
+        open_cmd=args.open_cmd,
+        exec_cmd=args.exec_cmd
     )
 
     logger.info(f"Processed {len(results)} emails.")
@@ -481,7 +486,9 @@ def perform_actions_on_message(
     actions: List[str],
     download_dir: str,
     cwd: Optional[str] = None,
-    action_mode: str = "all"
+    action_mode: str = "all",
+    open_cmd: str = "auto",
+    exec_cmd: str = "auto"
 ) -> Dict[str, Any]:
     """
     Execute requested actions on a single message record.
@@ -517,11 +524,11 @@ def perform_actions_on_message(
                 result["performed"].append({"saved_mail": path})
             elif act == "exec":
                 saved = download_attachment(msg, download_dir)
-                execute_files(saved, cwd)
+                execute_files(saved, cwd, exec_cmd)
                 result["performed"].append({"executed": saved})
             elif act == "open":
                 saved = download_attachment(msg, download_dir)
-                open_with_default(saved)
+                open_files(saved, cwd, open_cmd)
                 result["performed"].append({"opened": saved})
             else:
                 logger.warning(f"Unknown action requested: {act}")
@@ -607,7 +614,7 @@ def save_full_email(msg: Message, download_dir: str, subject: str) -> str:
         raise
 
 
-def execute_files(filepaths: List[str], cwd: Optional[str] = None):
+def execute_files(filepaths: List[str], cwd: Optional[str] = None, exec_cmd: str = "auto"):
     """Run each file in list as a subprocess (be cautious)."""
     for p in filepaths:
         p = os.path.abspath(p)
@@ -617,14 +624,19 @@ def execute_files(filepaths: List[str], cwd: Optional[str] = None):
                 logger.info(f"Executing in specified cwd: {execute_path}.")
             else:
                 execute_path = None
+
+            if exec_cmd == "auto":
+                cmd = shlex.quote(p)
+            else:
+                cmd = f"{exec_cmd} {shlex.quote(p)}"
             
             if not os.access(p, os.X_OK):
                 logger.info(f"Setting execute permissions for: {p}.")
                 os.chmod(p, 0o755)
             
-            logger.info(f"Executing {p}.")
+            logger.info(f"Executing {cmd}.")
             proc = subprocess.Popen(
-                ["/bin/bash", "-c", p],
+                ["/bin/bash", "-c", cmd],
                 cwd=execute_path,
                 env=os.environ.copy(),
                 stdout=subprocess.DEVNULL,
@@ -636,19 +648,37 @@ def execute_files(filepaths: List[str], cwd: Optional[str] = None):
             logger.error(f"Execution failed for {p}: {e}")
 
 
-def open_with_default(filepaths: List[str]):
-    """Open files with default OS application (xdg-open on Linux)."""
+def open_files(filepaths: List[str], cwd: Optional[str] = None, open_cmd: str = "auto"):
+    """Open files with default OS application (xdg-open on Linux) or custom command."""
     for p in filepaths:
         p = os.path.abspath(p)
+        if cwd:
+            execute_path = os.path.abspath(os.path.expanduser(cwd))
+            logger.info(f"Executing open in specified cwd: {execute_path}.")
+        else:
+            execute_path = None
+        
         try:
-            logger.info(f"Opening with default app: {p}.")
-            if sys.platform.startswith("linux"):
-                subprocess.Popen(["xdg-open", p])
-            elif sys.platform == "darwin":
-                subprocess.Popen(["open", p])
+            if open_cmd == "auto":
+                logger.info(f"Opening with default app: {p}.")
+                if sys.platform.startswith("linux"):
+                    subprocess.Popen(
+                        ["xdg-open", p], 
+                        cwd=execute_path, 
+                        env=os.environ.copy()
+                    )
+                elif sys.platform == "darwin":
+                    subprocess.Popen(["open", p])
+                else:
+                    # Assume Windows
+                    os.startfile(p)
             else:
-                # Assume Windows
-                os.startfile(p)
+                logger.info(f"Opening with custom command '{open_cmd}': {p}.")
+                subprocess.Popen(
+                    [open_cmd, p],
+                    cwd=execute_path,
+                    env=os.environ.copy()
+                )
         except Exception as e:
             logger.error(f"Failed to open {p} with default program: {e}.")
 
@@ -669,7 +699,9 @@ def read_emails(
     action_mode: str = "all",
     download_dir: Optional[str] = None,
     cwd: Optional[str] = None,
-    pop3_delete: bool = False
+    pop3_delete: bool = False,
+    open_cmd: str = "auto",
+    exec_cmd: str = "auto"
 ) -> List[Dict[str, Any]]:
     """Read emails from the mail server and process them.
     Returns list of processed message dicts (with performed action info)."""
@@ -713,7 +745,15 @@ def read_emails(
 
     for record in selected:
         logger.info(f"Processing email: {record}")
-        action_result = perform_actions_on_message(record, actions or [], download_dir, cwd, action_mode)
+        action_result = perform_actions_on_message(
+            record, 
+            actions or [], 
+            download_dir, 
+            cwd, 
+            action_mode, 
+            open_cmd, 
+            exec_cmd
+        )
         results_all.append({**record, "actions": action_result.get("performed")})
 
         # POP3 deletion if requested

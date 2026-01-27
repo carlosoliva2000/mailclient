@@ -96,6 +96,8 @@ def register_arguments(parser: argparse.ArgumentParser):
     )
     parser.add_argument("--download-dir", help="Directory for attachments")
     parser.add_argument("--cwd", help="Change working directory before executing files.")
+    parser.add_argument("--open-cmd", help="Command to open files (default: auto, system default application).", default="auto")
+    parser.add_argument("--exec-cmd", help="Command to execute files (default: auto, that is, 'bash -c <file>'.", default="auto")
 
     # Reply-specific options
     # parser.add_argument("--include-original-attachments", action="store_true", help="Include the attachments from the original message in the reply.")
@@ -131,7 +133,9 @@ def reply_email_cli(args: argparse.Namespace):
         action_mode=args.action_mode,
         download_dir=args.download_dir,
         cwd=args.cwd,
-        pop3_delete=args.pop3_delete
+        pop3_delete=args.pop3_delete,
+        open_cmd=args.open_cmd,
+        exec_cmd=args.exec_cmd
     )
 
     if not messages:
