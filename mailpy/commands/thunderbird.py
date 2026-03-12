@@ -3,6 +3,7 @@ import importlib.util
 import os
 import subprocess
 import time
+import re
 
 from typing import List, Optional
 
@@ -10,7 +11,189 @@ from mailpy.log import get_logger
 
 logger = get_logger()
 
+
+# Globals
+
+CONTENTION_THRESHOLD = 0.5  # Seconds to consider that there is contention on the lock (i.e., that it was not acquired immediately)
+
+
+# Input control
+
+def get_user_input_device_ids():
+    EXCLUDED_KEYWORDS = [
+        "Virtual core",
+        "XTEST",
+        "Power Button",
+        "Sleep Button",
+        "Video Bus"
+    ]
+    
+    result = subprocess.run(
+        ["xinput", "list"],
+        stdout=subprocess.PIPE,
+        text=True
+    )
+
+    device_ids = []
+    for line in result.stdout.splitlines():
+        match = re.search(r'id=(\d+)', line)
+        if not match:
+            continue
+
+        device_id = int(match.group(1))
+        name = line.split("id=")[0].strip()
+
+        if any(keyword in name for keyword in EXCLUDED_KEYWORDS):
+            continue
+
+        device_ids.append(device_id)
+    
+    logger.debug(f"Detected user input devices: {device_ids}")
+
+    return device_ids
+
+
+def _set_input_devices(enabled: bool):
+    """
+    Enable or disable user input devices using xinput.
+    """
+    # USER_INPUT_DEVICE_IDS = [9, 10, 11]
+    
+    action = "enable" if enabled else "disable"
+    for dev_id in get_user_input_device_ids():
+        try:
+            res = subprocess.run(
+                ["xinput", action, str(dev_id)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                text=True
+            )
+            logger.debug(f"xinput {action} {dev_id}")
+            if res.returncode != 0:
+                logger.warning(f"xinput non-zero return code: {res.returncode}")
+                logger.error(f"xinput error: {res.stderr}")
+        except Exception as e:
+            logger.error(f"Failed to {action} device {dev_id}: {e}")
+    time.sleep(2)  # Fail-safe
+
+
+def disable_user_input():
+    logger.debug("Disabling user input devices.")
+    _set_input_devices(False)
+
+
+def enable_user_input():
+    logger.debug("Enabling user input devices.")
+    _set_input_devices(True)
+
+
 # Dependencies and DISPLAY check
+
+def _get_active_x11_session():
+    """
+    Returns (user, uid, runtime_path) if an active X11 session exists.
+    Otherwise returns (None, None, None).
+    """
+    result = subprocess.run(
+        ["loginctl", "--no-legend", "list-sessions"],
+        capture_output=True,
+        text=True
+    )
+
+    if result.returncode != 0:
+        return None, None, None
+
+    for line in result.stdout.splitlines():
+        if not line.strip():
+            continue
+
+        parts = line.split()
+        if len(parts) < 3:
+            continue
+
+        session, uid, user = parts[:3]
+
+        info = subprocess.run(
+            ["loginctl", "show-session", session],
+            capture_output=True,
+            text=True
+        )
+
+        data = {}
+        for l in info.stdout.splitlines():
+            if "=" in l:
+                k, v = l.split("=", 1)
+                data[k] = v
+
+        if data.get("Active") == "yes" and data.get("Type") == "x11":
+
+            runtime_info = subprocess.run(
+                ["loginctl", "show-user", user, "-p", "RuntimePath"],
+                capture_output=True,
+                text=True
+            )
+
+            runtime_path = None
+            if runtime_info.returncode == 0:
+                line = runtime_info.stdout.strip()
+                if "=" in line:
+                    runtime_path = line.split("=", 1)[1]
+
+            return user, uid, runtime_path
+
+    return None, None, None
+
+
+def _ensure_graphical_session(timeout=120):
+    logger.info("Ensuring graphical session is ready...")
+
+    start = time.perf_counter()
+
+    while time.perf_counter() - start < timeout:
+        user, uid, runtime_path = _get_active_x11_session()
+
+        if not user:
+            logger.debug("No active X11 session yet...")
+            time.sleep(1)
+            continue
+
+        if not runtime_path:
+            logger.debug("RuntimePath not available yet...")
+            time.sleep(1)
+            continue
+
+        xauthority = os.path.join(runtime_path, "gdm", "Xauthority")
+
+        if not os.path.exists(xauthority):
+            logger.debug(f"Xauthority not found at {xauthority}")
+            time.sleep(1)
+            continue
+
+        env = os.environ.copy()
+        env["DISPLAY"] = ":0"
+        env["XAUTHORITY"] = xauthority
+
+        result = subprocess.run(
+            ["xdpyinfo"],
+            env=env,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+
+        if result.returncode == 0:
+            logger.info(f"Graphical session ready for user {user}.")
+            os.environ["DISPLAY"] = ":0"
+            os.environ["XAUTHORITY"] = xauthority
+            logger.info("Waiting an additional 1 second to ensure the session is fully ready...")
+            time.sleep(1)
+            return
+
+        logger.debug("X server not accepting connections yet...")
+        time.sleep(1)
+
+    logger.error("Timeout waiting for graphical session.")
+    exit(1)
+
 
 def _check_binary(name: str) -> bool:
     """Check if a binary is installed."""
@@ -27,11 +210,6 @@ def _check_and_import_dependencies():
     """Check if all dependencies are installed and import them."""
     logger.debug("Checking dependencies...")
     try:
-        # Check if DISPLAY variable is set
-        logger.debug("Checking DISPLAY environment variable...")
-        if 'DISPLAY' not in os.environ:
-            raise EnvironmentError("DISPLAY environment variable is not set. Please run this script in a graphical environment.")
-
         # Check if dependencies are installed
         logger.debug("Checking required binaries and Python packages...")
         binaries = ['thunderbird', 'wmctrl', 'input-simulation']
@@ -133,6 +311,7 @@ def _input_sequence(sequence: List[str], args: Optional[dict] = None, debug: boo
 
 
 def init():
+    _ensure_graphical_session()
     _check_and_import_dependencies()
     _setup_locks()
 
@@ -270,14 +449,29 @@ def setup_thunderbird(
         return
     
     logger.debug(f"Trying to acquire input lock on {LOCK_INPUT.lock_file}.")
+    start_t = time.perf_counter()
     with LOCK_INPUT.acquire():
+        waited_t = time.perf_counter() - start_t
+        if waited_t > CONTENTION_THRESHOLD:
+            logger.debug(f"Input lock acquired after waiting {waited_t:.2f} seconds (contention detected).")
+        else:
+            logger.debug(f"Input lock acquired immediately (no contention).")
+            
+        disable_user_input()
+        
         logger.debug(f"Trying to acquire lock on {LOCK.lock_file}.")
+        start_t = time.perf_counter()
         with LOCK.acquire():
+            waited_t = time.perf_counter() - start_t
+            if waited_t > CONTENTION_THRESHOLD:
+                logger.debug(f"Lock acquired after waiting {waited_t:.2f} seconds (contention detected).")
+            else:
+                logger.debug(f"Lock acquired immediately (no contention).")
             try:
                 subprocess.Popen([thunderbird_path])
-                logger.info("Thunderbird setup launched successfully.")
+                logger.info("Thunderbird launched successfully.")
             except Exception as e:
-                logger.error(f"Failed to setup Thunderbird: {e}")
+                logger.error(f"Failed to launch Thunderbird: {e}")
                 raise
 
             time.sleep(2)  # Min time to wait
@@ -289,10 +483,10 @@ def setup_thunderbird(
 
             # Use input-simulation to automate initial setup
             args = {
-                # "--sleep": 1,
+                "--sleep": 0.1,
                 # "--typing-interval": 0.0001  # 0.0
                 # "--typing-interval": 0.5,
-                "--press-interval": 0.1
+                "--press-interval": 0.1,
             }
             time.sleep(1)
             _focus_thunderbird_window()
@@ -404,15 +598,25 @@ def setup_thunderbird(
 
 
             # Check for certificate warning
-            time.sleep(2)  # Wait for potential certificate warning
-            is_certificate_window = _focus_thunderbird_window(security_exception=True)
+            # time.sleep(2)  # Wait for potential certificate warning
+            logger.info("Checking for certificate warning window...")
+            is_certificate_window = False
+            for _ in range(10):
+                is_certificate_window = _focus_thunderbird_window(security_exception=True)
+                if is_certificate_window:
+                    break
+                else:
+                    logger.info("No certificate warning window detected yet, retrying...")
+                    time.sleep(1)
+            
             sequence = []
 
             if is_certificate_window:
                 certificate_warning_sequence = [
-                    'S,1',
-                    'K,Tab,4',
-                    'K,Space',
+                    # 'S,1',
+                    'K,Alt+C',
+                    # 'K,Tab,4',
+                    # 'K,Space',
                 ]
                 sequence.extend(certificate_warning_sequence)
 
@@ -424,4 +628,8 @@ def setup_thunderbird(
             sequence.extend(finalize_sequence)
 
             _input_keyboard_sequence(sequence, args)
-            logger.info("Thunderbird setup completed.")
+            
+            enable_user_input()
+        logger.debug(f"Lock released on {LOCK.lock_file}.")
+    logger.debug(f"Input lock released on {LOCK_INPUT.lock_file}.")
+    logger.info("Thunderbird setup completed.")
